@@ -702,7 +702,42 @@ async function saveRecord() {
 
   btn.innerHTML = '✓ In Airtable speichern';
   btn.disabled  = false;
-  scanLocked    = false;
+  scanLocked      = false;
+  lastScannedCode = null;   // allow immediate re-scan of any code
+  lastScannedAt   = 0;
+
+  // safety: restart the scanner loop after each save so it never gets stuck
+  await restartScanner();
+}
+
+async function restartScanner() {
+  if (!codeReader) return;
+  try {
+    codeReader.reset();
+  } catch (e) {}
+  // wait one frame then re-attach
+  await new Promise(r => setTimeout(r, 100));
+  const video = document.getElementById('video');
+  try {
+    await codeReader.decodeFromConstraints(
+      {
+        video: {
+          facingMode: { ideal: 'environment' },
+          width:  { ideal: 1920 },
+          height: { ideal: 1080 },
+        }
+      },
+      video,
+      (result) => { if (result) handleScan(result.getText()); }
+    );
+    const stream = video.srcObject;
+    if (stream) {
+      videoTrack = stream.getVideoTracks()[0];
+      tryEnableContinuousFocus(videoTrack);
+    }
+  } catch (e) {
+    setStatus('Scanner-Neustart fehlgeschlagen – Seite neu laden');
+  }
 }
 
 function addHistory(ean, desc) {
