@@ -353,9 +353,19 @@ let history = [];
 let html5Scanner = null;
 let cameraActive = false;
 
+window.addEventListener('DOMContentLoaded', () => {
+  const saved = localStorage.getItem('airtable_api_key');
+  if (saved) {
+    apiKey = saved;
+    document.getElementById('setup-view').style.display = 'none';
+    document.getElementById('scanner-view').style.display = 'block';
+  }
+});
+
 function startScanner() {
   apiKey = document.getElementById('api-key').value.trim();
   if (!apiKey) { alert('Bitte deinen Airtable API Key eingeben.'); return; }
+  localStorage.setItem('airtable_api_key', apiKey);
   document.getElementById('setup-view').style.display = 'none';
   document.getElementById('scanner-view').style.display = 'block';
 }
