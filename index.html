@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>EAN Scanner</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+<script src="https://unpkg.com/@zxing/browser@0.1.5/umd/index.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -78,7 +79,6 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
   font-family: inherit;
   -webkit-appearance: none;
 }
-.card-row textarea { resize: none; }
 
 /* Camera */
 #cam-wrapper {
@@ -89,25 +89,12 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
   aspect-ratio: 4/3;
   position: relative;
 }
-#reader {
+#video {
   width: 100%;
   height: 100%;
+  object-fit: cover;
+  display: block;
 }
-/* hide html5-qrcode default header/footer elements */
-#reader > img,
-#reader__header_message,
-#reader__status_span,
-#reader__dashboard_section_swaplink,
-#reader__dashboard,
-#reader__filescan_input { display: none !important; }
-#reader video {
-  width: 100% !important;
-  height: 100% !important;
-  object-fit: cover !important;
-}
-#reader canvas { display: none !important; }
-
-/* scan line overlay — pointer-events: none so it doesn't block the scanner */
 #scan-overlay {
   position: absolute;
   inset: 0;
@@ -118,34 +105,74 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
   z-index: 2;
 }
 .scan-frame {
-  width: 240px;
-  height: 110px;
+  width: 78%;
+  height: 32%;
   position: relative;
+  transition: border-color 0.2s;
 }
 .scan-frame::before, .scan-frame::after,
 .scan-frame span::before, .scan-frame span::after {
   content: '';
   position: absolute;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-color: #fff;
   border-style: solid;
+  transition: border-color 0.2s;
 }
 .scan-frame::before  { top: 0;    left: 0;  border-width: 3px 0 0 3px; }
 .scan-frame::after   { top: 0;    right: 0; border-width: 3px 3px 0 0; }
 .scan-frame span::before { bottom: 0; left: 0;  border-width: 0 0 3px 3px; }
 .scan-frame span::after  { bottom: 0; right: 0; border-width: 0 3px 3px 0; }
+.scan-frame.hit::before, .scan-frame.hit::after,
+.scan-frame.hit span::before, .scan-frame.hit span::after {
+  border-color: var(--green);
+}
 .scan-line {
   position: absolute;
   left: 8px; right: 8px;
   height: 2px;
   background: rgba(29,158,117,0.9);
+  box-shadow: 0 0 8px rgba(29,158,117,0.6);
   animation: scanline 1.8s ease-in-out infinite;
 }
 @keyframes scanline {
-  0%, 100% { top: 10%; }
-  50%       { top: 90%; }
+  0%, 100% { top: 8%; }
+  50%       { top: 92%; }
 }
+
+.cam-controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 6px;
+  z-index: 3;
+}
+.cam-btn {
+  background: rgba(0,0,0,0.55);
+  color: #fff;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  -webkit-tap-highlight-color: transparent;
+}
+.cam-btn.active { background: var(--amber); }
+
+#flash-overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--green);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 1;
+  transition: opacity 0.2s;
+}
+#flash-overlay.flash { opacity: 0.4; }
 
 .btn {
   width: 100%;
@@ -161,7 +188,6 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .btn:active { opacity: 0.75; }
 .btn-primary   { background: var(--green);   color: #fff; }
 .btn-secondary { background: var(--surface); border: 0.5px solid var(--border); color: var(--text); }
-.btn-red       { background: var(--red);     color: #fff; }
 
 .result-card {
   border-radius: var(--radius);
@@ -264,9 +290,13 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
   <div class="section">
     <div class="spacer"></div>
     <div id="cam-wrapper">
-      <div id="reader"></div>
+      <video id="video" playsinline muted autoplay></video>
+      <div id="flash-overlay"></div>
       <div id="scan-overlay">
-        <div class="scan-frame"><span></span><div class="scan-line"></div></div>
+        <div class="scan-frame" id="scan-frame"><span></span><div class="scan-line"></div></div>
+      </div>
+      <div class="cam-controls">
+        <button class="cam-btn" id="torch-btn" onclick="toggleTorch()" style="display:none">⚡</button>
       </div>
     </div>
     <p class="cam-status" id="cam-status">Barcode in den Rahmen halten</p>
@@ -343,7 +373,6 @@ const EAN_DESC  = 'fldBdHSHCdlRtcQNf';
 const INV_EAN_BC  = 'fldq9WPR8VwRU1p8Y';
 const INV_LINK    = 'fldP8NRGf9YdFidSU';
 const INV_DATUM   = 'fldS7qcrpUwURvXN5';
-const INV_NOTIZEN = 'fldAYbWHqpOT5ZIkr';
 
 let apiKey = '';
 let matchedRecordId = null;
@@ -352,8 +381,13 @@ let matchedDesc = '';
 let scanned = 0;
 let notFound = 0;
 let scanHistory = [];
-let scanner = null;
-let scanLocked = false; // debounce: ignore new scans while processing
+let codeReader = null;
+let scannerControls = null;
+let videoTrack = null;
+let torchOn = false;
+let scanLocked = false;
+let lastScannedCode = null;
+let lastScannedAt = 0;
 
 window.addEventListener('DOMContentLoaded', () => {
   const saved = localStorage.getItem('airtable_api_key');
@@ -387,47 +421,142 @@ function resetApp() {
 
 async function startCamera() {
   setStatus('Kamera wird gestartet…');
-  document.getElementById('cam-status').textContent = 'Barcode in den Rahmen halten';
+
+  const hints = new Map();
+  const ZXing = window.ZXing;
+  const ZXingBrowser = window.ZXingBrowser;
+
+  if (!ZXing || !ZXingBrowser) {
+    setStatus('Scanner-Library konnte nicht geladen werden');
+    return;
+  }
+
+  const formats = [
+    ZXing.BarcodeFormat.EAN_13,
+    ZXing.BarcodeFormat.EAN_8,
+    ZXing.BarcodeFormat.UPC_A,
+    ZXing.BarcodeFormat.UPC_E,
+    ZXing.BarcodeFormat.CODE_128,
+    ZXing.BarcodeFormat.CODE_39,
+    ZXing.BarcodeFormat.ITF,
+  ];
+  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+  hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+
+  codeReader = new ZXingBrowser.BrowserMultiFormatReader(hints, {
+    delayBetweenScanAttempts: 80,   // try every 80ms instead of default 500ms
+    delayBetweenScanSuccess: 800,
+  });
+
+  const constraints = {
+    video: {
+      facingMode: { ideal: 'environment' },
+      width:  { ideal: 1920 },
+      height: { ideal: 1080 },
+    }
+  };
+
+  const video = document.getElementById('video');
 
   try {
-    scanner = new Html5Qrcode('reader', { verbose: false });
-    await scanner.start(
-      { facingMode: 'environment' },
-      {
-        fps: 12,
-        qrbox: { width: 260, height: 110 },
-        formatsToSupport: [
-          Html5QrcodeSupportedFormats.EAN_13,
-          Html5QrcodeSupportedFormats.EAN_8,
-          Html5QrcodeSupportedFormats.CODE_128,
-          Html5QrcodeSupportedFormats.UPC_A,
-          Html5QrcodeSupportedFormats.UPC_E,
-        ],
-        aspectRatio: 1.333,
-      },
-      onScanSuccess,
-      () => {} // ignore scan errors (no barcode found in frame)
+    scannerControls = await codeReader.decodeFromConstraints(
+      constraints,
+      video,
+      (result, err) => {
+        if (result) handleScan(result.getText());
+      }
     );
+
+    // grab the video track for torch control + continuous focus
+    const stream = video.srcObject;
+    if (stream) {
+      videoTrack = stream.getVideoTracks()[0];
+      tryEnableContinuousFocus(videoTrack);
+      checkTorchSupport(videoTrack);
+    }
+
     setStatus('Bereit zum Scannen');
   } catch (e) {
     setStatus('Kamera nicht verfügbar');
     document.getElementById('cam-status').textContent =
-      'Kamerazugriff verweigert oder nicht verfügbar. Bitte EAN manuell eingeben.';
+      'Kamerazugriff verweigert. Bitte in den Browser-Einstellungen erlauben.';
+  }
+}
+
+async function tryEnableContinuousFocus(track) {
+  try {
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    const advanced = [];
+    if (caps.focusMode && caps.focusMode.includes('continuous')) {
+      advanced.push({ focusMode: 'continuous' });
+    }
+    if (caps.exposureMode && caps.exposureMode.includes('continuous')) {
+      advanced.push({ exposureMode: 'continuous' });
+    }
+    if (caps.whiteBalanceMode && caps.whiteBalanceMode.includes('continuous')) {
+      advanced.push({ whiteBalanceMode: 'continuous' });
+    }
+    if (advanced.length) await track.applyConstraints({ advanced });
+  } catch (e) { /* ignore */ }
+}
+
+function checkTorchSupport(track) {
+  const caps = track.getCapabilities ? track.getCapabilities() : {};
+  if (caps.torch) {
+    document.getElementById('torch-btn').style.display = 'block';
+  }
+}
+
+async function toggleTorch() {
+  if (!videoTrack) return;
+  try {
+    torchOn = !torchOn;
+    await videoTrack.applyConstraints({ advanced: [{ torch: torchOn }] });
+    document.getElementById('torch-btn').classList.toggle('active', torchOn);
+  } catch (e) {
+    torchOn = false;
   }
 }
 
 function stopCamera() {
-  if (scanner) {
-    scanner.stop().catch(() => {});
-    scanner = null;
+  if (scannerControls) {
+    try { scannerControls.stop(); } catch (e) {}
+    scannerControls = null;
   }
+  if (videoTrack) {
+    try { videoTrack.stop(); } catch (e) {}
+    videoTrack = null;
+  }
+  codeReader = null;
+  torchOn = false;
 }
 
-function onScanSuccess(ean) {
-  if (scanLocked) return; // debounce: one scan at a time
+function handleScan(code) {
+  const now = Date.now();
+  // ignore same code re-scanned within 2.5s, and any scan while a result is open
+  if (scanLocked) return;
+  if (code === lastScannedCode && (now - lastScannedAt) < 2500) return;
+
+  lastScannedCode = code;
+  lastScannedAt = now;
   scanLocked = true;
-  document.getElementById('ean-input').value = ean;
-  lookupEAN(ean);
+
+  flashOverlay();
+  vibrate(50);
+
+  document.getElementById('ean-input').value = code;
+  lookupEAN(code);
+}
+
+function flashOverlay() {
+  const flash = document.getElementById('flash-overlay');
+  const frame = document.getElementById('scan-frame');
+  flash.classList.add('flash');
+  frame.classList.add('hit');
+  setTimeout(() => {
+    flash.classList.remove('flash');
+    frame.classList.remove('hit');
+  }, 250);
 }
 
 function manualLookup() {
@@ -444,6 +573,7 @@ function cancelSave() {
   showResult(null);
   document.getElementById('ean-input').value = '';
   scanLocked = false;
+  setStatus('Bereit zum Scannen');
 }
 
 async function lookupEAN(ean) {
@@ -473,7 +603,7 @@ async function lookupEAN(ean) {
       updateCounter();
       showResult({ ok: false, message: `EAN "${ean}" nicht gefunden.` });
       setStatus('Nicht gefunden');
-      scanLocked = false; // allow next scan
+      scanLocked = false;
       return;
     }
 
@@ -493,7 +623,6 @@ async function lookupEAN(ean) {
     showResult({ ok: true, sku, color, size, desc });
     document.getElementById('save-section').style.display = 'block';
     setStatus('Gefunden – bitte speichern');
-    vibrate(50);
 
   } catch (e) {
     showResult({ ok: false, message: e.message });
@@ -536,7 +665,7 @@ async function saveRecord() {
   try {
     const body = {
       fields: {
-        [INV_EAN_BC]:  { text: matchedEAN },  // barcode field — needs { text } wrapper
+        [INV_EAN_BC]:  { text: matchedEAN },
         [INV_LINK]:    [{ id: matchedRecordId }],
         [INV_DATUM]:   today,
       }
@@ -562,7 +691,7 @@ async function saveRecord() {
     document.getElementById('ean-input').value = '';
     showResult(null);
     setStatus(`✓ Gespeichert (${scanned} gesamt)`);
-    setTimeout(() => setStatus('Bereit zum Scannen'), 2500);
+    setTimeout(() => setStatus('Bereit zum Scannen'), 2000);
 
     matchedRecordId = null;
     matchedEAN      = null;
@@ -573,7 +702,7 @@ async function saveRecord() {
 
   btn.innerHTML = '✓ In Airtable speichern';
   btn.disabled  = false;
-  scanLocked    = false; // ready for next scan
+  scanLocked    = false;
 }
 
 function addHistory(ean, desc) {
