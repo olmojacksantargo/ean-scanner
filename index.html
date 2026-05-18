@@ -180,10 +180,65 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .counter-num   { font-size: 28px; font-weight: 700; color: var(--amber); }
 .counter-label { font-size: 12px; color: var(--muted); }
 
-.history-item { padding: 10px 16px; border-bottom: 0.5px solid var(--border); font-size: 13px; }
-.history-item:last-child { border-bottom: none; }
-.history-sku  { font-weight: 600; }
-.history-meta { color: var(--muted); margin-top: 2px; }
+/* Scan log table */
+.log-row {
+  display: grid;
+  grid-template-columns: 56px 1fr 24px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 0.5px solid var(--border);
+  font-size: 13px;
+}
+.log-row:last-child { border-bottom: none; }
+.log-time {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: pre-line;
+  line-height: 1.3;
+}
+.log-body { min-width: 0; }
+.log-desc {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.log-ean {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+.log-status {
+  font-size: 16px;
+  text-align: center;
+  line-height: 1;
+}
+.log-status.saved    { color: var(--green); }
+.log-status.notfound { color: var(--red); }
+.log-status.error    { color: var(--amber); }
+
+.log-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 8px;
+}
+.log-actions {
+  display: flex; gap: 8px;
+}
+.log-action-btn {
+  background: none; border: none;
+  color: var(--muted); font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  font-weight: 600; cursor: pointer; padding: 4px 6px;
+  -webkit-tap-highlight-color: transparent;
+}
+.log-action-btn:active { opacity: 0.5; }
+.log-empty {
+  padding: 24px 16px; text-align: center;
+  color: var(--muted); font-size: 13px;
+}
 
 .spinner {
   display: inline-block;
@@ -314,11 +369,19 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
     </div>
   </div>
 
-  <!-- History -->
-  <div class="section" id="history-section" style="display:none">
+  <!-- Scan log -->
+  <div class="section">
     <div class="spacer"></div>
-    <div class="label">Zuletzt gescannt</div>
-    <div class="card" id="history-list"></div>
+    <div class="log-header">
+      <div class="label" style="margin-bottom:0">Scan-Log <span id="log-count" style="opacity:0.7"></span></div>
+      <div class="log-actions">
+        <button class="log-action-btn" onclick="exportLogCSV()">Export</button>
+        <button class="log-action-btn" onclick="clearLog()">Leeren</button>
+      </div>
+    </div>
+    <div class="card" id="log-list">
+      <div class="log-empty">Noch keine Scans</div>
+    </div>
   </div>
 
   <div class="section pb"><div class="spacer"></div>
@@ -350,7 +413,7 @@ let matchedEAN = null;
 let matchedDesc = '';
 let scanned = 0;
 let notFound = 0;
-let scanHistory = [];
+let scanLog = [];   // persistent: { ts, ean, desc, status }
 
 let videoStream = null;
 let videoTrack = null;
@@ -369,9 +432,14 @@ let zoomCaps = null;
 let scanLocked = false;
 let lastScannedCode = null;
 let lastScannedAt = 0;
+let debugInterval = null;
+
+const LOG_KEY = 'ean_scan_log_v1';
 
 // ----- Init -----
 window.addEventListener('DOMContentLoaded', () => {
+  loadLog();
+  renderLog();
   const saved = localStorage.getItem('airtable_api_key');
   if (saved) { apiKey = saved; showScannerView(); }
 });
@@ -564,11 +632,12 @@ function startScanLoop() {
   stopScanLoop();
   initScanCanvas();
   scanLoop = setInterval(useNative ? scanOnceNative : scanOnceZXing, 70);
-  setInterval(showDebug, 500);
+  if (!debugInterval) debugInterval = setInterval(showDebug, 500);
 }
 
 function stopScanLoop() {
-  if (scanLoop) { clearInterval(scanLoop); scanLoop = null; }
+  if (scanLoop)      { clearInterval(scanLoop);      scanLoop = null; }
+  if (debugInterval) { clearInterval(debugInterval); debugInterval = null; }
 }
 
 async function scanOnceNative() {
@@ -672,13 +741,17 @@ async function lookupEAN(ean) {
 
     const res = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
     if (!res.ok) {
-      const err = await res.json();
+      if (res.status === 401) {
+        throw new Error('API Key ungültig – bitte unter ⚙ neu eingeben');
+      }
+      const err = await res.json().catch(() => ({}));
       throw new Error(err.error?.message || `API-Fehler ${res.status}`);
     }
     const data = await res.json();
 
     if (!data.records || data.records.length === 0) {
       notFound++; updateCounter();
+      addLogEntry({ ean, desc: '(nicht in Airtable)', status: 'notfound' });
       showResult({ ok: false, message: `EAN "${ean}" nicht gefunden.` });
       setStatus('Nicht gefunden');
       scanLocked = false;
@@ -763,7 +836,7 @@ async function saveRecord() {
 
     scanned++;
     updateCounter();
-    addHistory(matchedEAN, matchedDesc);
+    addLogEntry({ ean: matchedEAN, desc: matchedDesc, status: 'saved' });
     vibrate([50, 30, 50]);
 
     document.getElementById('save-section').style.display = 'none';
@@ -785,15 +858,108 @@ async function saveRecord() {
   lastScannedAt   = 0;
 }
 
-function addHistory(ean, desc) {
-  scanHistory.unshift({ ean, desc });
-  if (scanHistory.length > 10) scanHistory.pop();
-  document.getElementById('history-list').innerHTML = scanHistory.map(h =>
-    `<div class="history-item">
-      <div class="history-sku">${h.desc}</div>
-      <div class="history-meta">${h.ean}</div>
-    </div>`).join('');
-  document.getElementById('history-section').style.display = 'block';
+// ----- Scan log (persistent) -----
+function loadLog() {
+  try {
+    const raw = localStorage.getItem(LOG_KEY);
+    scanLog = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(scanLog)) scanLog = [];
+  } catch (e) { scanLog = []; }
+}
+
+function saveLog() {
+  try { localStorage.setItem(LOG_KEY, JSON.stringify(scanLog)); } catch (e) {}
+}
+
+function addLogEntry({ ean, desc, status }) {
+  scanLog.unshift({ ts: Date.now(), ean: String(ean), desc: String(desc || ''), status });
+  if (scanLog.length > 500) scanLog.length = 500;  // sane cap
+  saveLog();
+  renderLog();
+}
+
+function deleteLogEntry(ts) {
+  scanLog = scanLog.filter(e => e.ts !== ts);
+  saveLog();
+  renderLog();
+}
+
+function clearLog() {
+  if (!scanLog.length) return;
+  if (!confirm(`Alle ${scanLog.length} Einträge im Log löschen?`)) return;
+  scanLog = [];
+  saveLog();
+  renderLog();
+}
+
+function renderLog() {
+  const list = document.getElementById('log-list');
+  const count = document.getElementById('log-count');
+  if (!list) return;
+  count.textContent = scanLog.length ? `(${scanLog.length})` : '';
+  if (!scanLog.length) {
+    list.innerHTML = '<div class="log-empty">Noch keine Scans</div>';
+    return;
+  }
+  list.innerHTML = scanLog.map(e => {
+    const icon = e.status === 'saved' ? '✓' : e.status === 'notfound' ? '✗' : '!';
+    const time = formatTime(e.ts);
+    return `<div class="log-row" onclick="onLogTap(${e.ts})">
+      <div class="log-time">${time}</div>
+      <div class="log-body">
+        <div class="log-desc">${escapeHtml(e.desc) || '–'}</div>
+        <div class="log-ean">${escapeHtml(e.ean)}</div>
+      </div>
+      <div class="log-status ${e.status}">${icon}</div>
+    </div>`;
+  }).join('');
+}
+
+function onLogTap(ts) {
+  const e = scanLog.find(x => x.ts === ts);
+  if (!e) return;
+  if (confirm(`${e.desc || e.ean}\n${e.ean}\n${new Date(e.ts).toLocaleString('de-DE')}\n\nEintrag löschen?`)) {
+    deleteLogEntry(ts);
+  }
+}
+
+function formatTime(ts) {
+  const d = new Date(ts);
+  const today = new Date();
+  const sameDay = d.toDateString() === today.toDateString();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  if (sameDay) return `${hh}:${mm}`;
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}.${mo}\n${hh}:${mm}`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+
+function exportLogCSV() {
+  if (!scanLog.length) { alert('Log ist leer.'); return; }
+  const rows = [['Datum', 'Uhrzeit', 'EAN', 'Beschreibung', 'Status']];
+  scanLog.forEach(e => {
+    const d = new Date(e.ts);
+    const date = d.toLocaleDateString('de-DE');
+    const time = d.toLocaleTimeString('de-DE');
+    rows.push([date, time, e.ean, e.desc, e.status]);
+  });
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = `ean-scan-log-${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function updateCounter() {
