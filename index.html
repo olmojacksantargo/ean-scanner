@@ -4,48 +4,31 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>EAN Scanner</title>
-<script src="https://unpkg.com/@zxing/library@0.19.3/umd/index.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg: #f7f6f3;
-  --surface: #ffffff;
-  --border: rgba(0,0,0,0.1);
-  --text: #1a1a1a;
-  --muted: #6b6b6b;
-  --green: #1D9E75;
-  --green-light: #E1F5EE;
-  --red: #E24B4A;
-  --red-light: #FCEBEB;
-  --amber: #BA7517;
-  --amber-light: #FAEEDA;
+  --bg: #f7f6f3; --surface: #ffffff; --border: rgba(0,0,0,0.1);
+  --text: #1a1a1a; --muted: #6b6b6b;
+  --green: #1D9E75; --green-light: #E1F5EE;
+  --red: #E24B4A; --red-light: #FCEBEB;
+  --amber: #BA7517; --amber-light: #FAEEDA;
   --radius: 14px;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1a1a18;
-    --surface: #242422;
-    --border: rgba(255,255,255,0.1);
-    --text: #f0ede6;
-    --muted: #9a9990;
-    --green-light: #04342C;
-    --red-light: #501313;
-    --amber-light: #412402;
+    --bg: #1a1a18; --surface: #242422; --border: rgba(255,255,255,0.1);
+    --text: #f0ede6; --muted: #9a9990;
+    --green-light: #04342C; --red-light: #501313; --amber-light: #412402;
   }
 }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  min-height: 100vh;
+  background: var(--bg); color: var(--text); min-height: 100vh;
 }
 header {
-  background: var(--surface);
-  border-bottom: 0.5px solid var(--border);
-  padding: 16px 20px 12px;
-  position: sticky;
-  top: 0;
-  z-index: 10;
+  background: var(--surface); border-bottom: 0.5px solid var(--border);
+  padding: 16px 20px 12px; position: sticky; top: 0; z-index: 10;
 }
 header h1 { font-size: 17px; font-weight: 600; }
 header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
@@ -54,73 +37,56 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
 
 .card {
-  background: var(--surface);
-  border: 0.5px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
+  background: var(--surface); border: 0.5px solid var(--border);
+  border-radius: var(--radius); overflow: hidden;
 }
 .card-row {
-  display: flex;
-  align-items: center;
-  padding: 13px 16px;
-  gap: 12px;
+  display: flex; align-items: center;
+  padding: 13px 16px; gap: 12px;
   border-bottom: 0.5px solid var(--border);
 }
 .card-row:last-child { border-bottom: none; }
 .card-row label { font-size: 14px; color: var(--muted); flex-shrink: 0; width: 80px; }
-.card-row input, .card-row textarea {
-  flex: 1;
-  background: transparent;
-  border: none;
-  outline: none;
-  font-size: 14px;
-  color: var(--text);
-  font-family: inherit;
+.card-row input {
+  flex: 1; background: transparent; border: none; outline: none;
+  font-size: 14px; color: var(--text); font-family: inherit;
   -webkit-appearance: none;
 }
 
-/* Camera */
+/* Camera — taller for better close-up framing */
 #cam-wrapper {
   width: 100%;
   border-radius: var(--radius);
   overflow: hidden;
   background: #000;
-  aspect-ratio: 4/3;
+  aspect-ratio: 3/4;
   position: relative;
 }
 #video {
-  width: 100%;
-  height: 100%;
+  width: 100%; height: 100%;
   object-fit: cover;
   display: block;
 }
 #scan-overlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
   pointer-events: none;
   z-index: 2;
 }
 .scan-frame {
-  width: 78%;
-  height: 32%;
+  width: 82%; height: 28%;
   position: relative;
   transition: border-color 0.2s;
 }
 .scan-frame::before, .scan-frame::after,
 .scan-frame span::before, .scan-frame span::after {
-  content: '';
-  position: absolute;
-  width: 28px;
-  height: 28px;
-  border-color: #fff;
-  border-style: solid;
+  content: ''; position: absolute;
+  width: 30px; height: 30px;
+  border-color: #fff; border-style: solid;
   transition: border-color 0.2s;
 }
-.scan-frame::before  { top: 0;    left: 0;  border-width: 3px 0 0 3px; }
-.scan-frame::after   { top: 0;    right: 0; border-width: 3px 3px 0 0; }
+.scan-frame::before  { top: 0; left: 0;  border-width: 3px 0 0 3px; }
+.scan-frame::after   { top: 0; right: 0; border-width: 3px 3px 0 0; }
 .scan-frame span::before { bottom: 0; left: 0;  border-width: 0 0 3px 3px; }
 .scan-frame span::after  { bottom: 0; right: 0; border-width: 0 3px 3px 0; }
 .scan-frame.hit::before, .scan-frame.hit::after,
@@ -128,64 +94,59 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
   border-color: var(--green);
 }
 .scan-line {
-  position: absolute;
-  left: 8px; right: 8px;
+  position: absolute; left: 8px; right: 8px;
   height: 2px;
   background: rgba(29,158,117,0.9);
   box-shadow: 0 0 8px rgba(29,158,117,0.6);
-  animation: scanline 1.8s ease-in-out infinite;
+  animation: scanline 1.4s ease-in-out infinite;
 }
-@keyframes scanline {
-  0%, 100% { top: 8%; }
-  50%       { top: 92%; }
-}
+@keyframes scanline { 0%,100% { top: 5%; } 50% { top: 95%; } }
 
 .cam-controls {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: flex;
-  gap: 6px;
-  z-index: 3;
+  position: absolute; top: 8px; right: 8px;
+  display: flex; gap: 6px; z-index: 3;
 }
 .cam-btn {
-  background: rgba(0,0,0,0.55);
-  color: #fff;
-  border: none;
-  padding: 8px 12px;
-  border-radius: 20px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  backdrop-filter: blur(6px);
+  background: rgba(0,0,0,0.55); color: #fff;
+  border: none; padding: 8px 12px;
+  border-radius: 20px; font-size: 13px; font-weight: 600;
+  cursor: pointer; backdrop-filter: blur(6px);
   -webkit-tap-highlight-color: transparent;
 }
 .cam-btn.active { background: var(--amber); }
 
+#zoom-controls {
+  position: absolute; bottom: 12px; left: 50%;
+  transform: translateX(-50%);
+  display: flex; gap: 6px; z-index: 3;
+}
+.zoom-btn {
+  background: rgba(0,0,0,0.55); color: #fff;
+  border: none; padding: 8px 14px;
+  border-radius: 20px; font-size: 13px; font-weight: 600;
+  cursor: pointer; backdrop-filter: blur(6px);
+  -webkit-tap-highlight-color: transparent;
+  min-width: 48px;
+}
+.zoom-btn.active { background: #fff; color: #000; }
+
 #flash-overlay {
-  position: absolute;
-  inset: 0;
+  position: absolute; inset: 0;
   background: var(--green);
-  opacity: 0;
-  pointer-events: none;
-  z-index: 1;
+  opacity: 0; pointer-events: none; z-index: 1;
   transition: opacity 0.2s;
 }
 #flash-overlay.flash { opacity: 0.4; }
 
 .btn {
-  width: 100%;
-  padding: 15px;
-  border: none;
-  border-radius: var(--radius);
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity 0.15s;
+  width: 100%; padding: 15px;
+  border: none; border-radius: var(--radius);
+  font-size: 16px; font-weight: 600;
+  cursor: pointer; transition: opacity 0.15s;
   -webkit-tap-highlight-color: transparent;
 }
 .btn:active { opacity: 0.75; }
-.btn-primary   { background: var(--green);   color: #fff; }
+.btn-primary   { background: var(--green); color: #fff; }
 .btn-secondary { background: var(--surface); border: 0.5px solid var(--border); color: var(--text); }
 
 .result-card {
@@ -194,19 +155,16 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
   display: none;
 }
 .result-card.success { background: var(--green-light); border: 0.5px solid var(--green); }
-.result-card.error   { background: var(--red-light);   border: 0.5px solid var(--red); }
+.result-card.error   { background: var(--red-light); border: 0.5px solid var(--red); }
 .result-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
 .result-card.success .result-title { color: var(--green); }
 .result-card.error   .result-title { color: var(--red); }
 .result-detail { font-size: 13px; color: var(--text); line-height: 1.6; }
 .result-badge {
   display: inline-block;
-  background: rgba(29,158,117,0.15);
-  color: var(--green);
-  border-radius: 6px;
-  padding: 2px 8px;
-  font-size: 12px;
-  font-weight: 600;
+  background: rgba(29,158,117,0.15); color: var(--green);
+  border-radius: 6px; padding: 2px 8px;
+  font-size: 12px; font-weight: 600;
   margin-right: 4px;
 }
 
@@ -249,6 +207,11 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
   font-size: 13px;
   color: var(--muted);
   padding: 12px 0 0;
+}
+.debug {
+  font-size: 10px; color: var(--muted);
+  text-align: center; padding-top: 4px;
+  font-family: ui-monospace, monospace;
 }
 </style>
 </head>
@@ -297,8 +260,14 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
       <div class="cam-controls">
         <button class="cam-btn" id="torch-btn" onclick="toggleTorch()" style="display:none">⚡</button>
       </div>
+      <div id="zoom-controls" style="display:none">
+        <button class="zoom-btn" data-zoom="1" onclick="setZoom(1)">1×</button>
+        <button class="zoom-btn active" data-zoom="2" onclick="setZoom(2)">2×</button>
+        <button class="zoom-btn" data-zoom="3" onclick="setZoom(3)">3×</button>
+      </div>
     </div>
     <p class="cam-status" id="cam-status">Barcode in den Rahmen halten</p>
+    <p class="debug" id="debug-info"></p>
   </div>
 
   <!-- Ergebnis -->
@@ -358,6 +327,7 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
 </div>
 
 <script>
+// ----- Airtable config -----
 const BASE_ID = 'appCrbJojuKd2ifEp';
 const EAN_TBL = 'tblQQXW4WP1mXfapz';
 const INV_TBL = 'tblQQ91QHguUVv1CH';
@@ -369,10 +339,11 @@ const EAN_SIZE  = 'fldq9f1VbknXtgjj1';
 const EAN_LOT   = 'fldFge5GhoXeYWgCj';
 const EAN_DESC  = 'fldBdHSHCdlRtcQNf';
 
-const INV_EAN_BC  = 'fldq9WPR8VwRU1p8Y';
-const INV_LINK    = 'fldP8NRGf9YdFidSU';
-const INV_DATUM   = 'fldS7qcrpUwURvXN5';
+const INV_EAN_BC = 'fldq9WPR8VwRU1p8Y';
+const INV_LINK   = 'fldP8NRGf9YdFidSU';
+const INV_DATUM  = 'fldS7qcrpUwURvXN5';
 
+// ----- State -----
 let apiKey = '';
 let matchedRecordId = null;
 let matchedEAN = null;
@@ -380,20 +351,25 @@ let matchedDesc = '';
 let scanned = 0;
 let notFound = 0;
 let scanHistory = [];
-let codeReader = null;
-let scannerControls = null;
+
+let videoStream = null;
 let videoTrack = null;
+let scanLoop = null;
+let zxingReader = null;
+let nativeDetector = null;
+let useNative = false;
+
 let torchOn = false;
+let currentZoom = 1;
+let zoomCaps = null;
 let scanLocked = false;
 let lastScannedCode = null;
 let lastScannedAt = 0;
 
+// ----- Init -----
 window.addEventListener('DOMContentLoaded', () => {
   const saved = localStorage.getItem('airtable_api_key');
-  if (saved) {
-    apiKey = saved;
-    showScannerView();
-  }
+  if (saved) { apiKey = saved; showScannerView(); }
 });
 
 function startApp() {
@@ -418,87 +394,130 @@ function resetApp() {
   document.getElementById('api-key').value = '';
 }
 
+// ----- Camera + scanner setup -----
 async function startCamera() {
   setStatus('Kamera wird gestartet…');
 
-  const ZXing = window.ZXing;
-  if (!ZXing || !ZXing.BrowserMultiFormatReader) {
-    setStatus('Scanner-Library konnte nicht geladen werden');
-    return;
-  }
+  const video = document.getElementById('video');
 
-  const hints = new Map();
-  const formats = [
-    ZXing.BarcodeFormat.EAN_13,
-    ZXing.BarcodeFormat.EAN_8,
-    ZXing.BarcodeFormat.UPC_A,
-    ZXing.BarcodeFormat.UPC_E,
-    ZXing.BarcodeFormat.CODE_128,
-    ZXing.BarcodeFormat.CODE_39,
-    ZXing.BarcodeFormat.ITF,
-  ];
-  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
-  hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-
-  // 2nd arg = timeBetweenScansMillis (default 500). Lower = faster detection.
-  codeReader = new ZXing.BrowserMultiFormatReader(hints, 100);
-
+  // Request the highest-resolution back camera available
   const constraints = {
+    audio: false,
     video: {
       facingMode: { ideal: 'environment' },
       width:  { ideal: 1920 },
       height: { ideal: 1080 },
-    }
+      frameRate: { ideal: 30 },
+    },
   };
 
-  const video = document.getElementById('video');
-
   try {
-    await codeReader.decodeFromConstraints(
-      constraints,
-      video,
-      (result, err) => {
-        if (result) handleScan(result.getText());
-      }
-    );
-
-    const stream = video.srcObject;
-    if (stream) {
-      videoTrack = stream.getVideoTracks()[0];
-      tryEnableContinuousFocus(videoTrack);
-      checkTorchSupport(videoTrack);
-    }
-
-    setStatus('Bereit zum Scannen');
+    videoStream = await navigator.mediaDevices.getUserMedia(constraints);
   } catch (e) {
-    setStatus('Kamera nicht verfügbar');
-    document.getElementById('cam-status').textContent =
-      'Kamerazugriff verweigert: ' + (e.message || e);
+    // Fallback to any camera
+    try {
+      videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+    } catch (e2) {
+      setStatus('Kein Kamerazugriff');
+      document.getElementById('cam-status').textContent = 'Bitte Kamera erlauben: ' + (e2.message || e2);
+      return;
+    }
+  }
+
+  video.srcObject = videoStream;
+  try { await video.play(); } catch (e) {}
+
+  videoTrack = videoStream.getVideoTracks()[0];
+  await applyOptimalCameraSettings();
+  setupZoomUI();
+  setupTorchUI();
+
+  // Decide decoder
+  if ('BarcodeDetector' in window) {
+    try {
+      const formats = await BarcodeDetector.getSupportedFormats();
+      const wanted = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf'];
+      const supported = wanted.filter(f => formats.includes(f));
+      if (supported.length) {
+        nativeDetector = new BarcodeDetector({ formats: supported });
+        useNative = true;
+      }
+    } catch (e) { useNative = false; }
+  }
+
+  if (!useNative) {
+    // ZXing fallback
+    const ZXing = window.ZXing;
+    if (!ZXing) {
+      setStatus('Scanner-Library fehlt');
+      return;
+    }
+    const hints = new Map();
+    const fmt = [
+      ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8,
+      ZXing.BarcodeFormat.UPC_A,  ZXing.BarcodeFormat.UPC_E,
+      ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.CODE_39,
+      ZXing.BarcodeFormat.ITF,
+    ];
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, fmt);
+    hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+    zxingReader = new ZXing.BrowserMultiFormatReader(hints, 80);
+  }
+
+  startScanLoop();
+  showDebug();
+  setStatus('Bereit zum Scannen');
+}
+
+async function applyOptimalCameraSettings() {
+  if (!videoTrack || !videoTrack.getCapabilities) return;
+  const caps = videoTrack.getCapabilities();
+  const advanced = [];
+
+  if (caps.focusMode?.includes('continuous'))        advanced.push({ focusMode: 'continuous' });
+  if (caps.exposureMode?.includes('continuous'))     advanced.push({ exposureMode: 'continuous' });
+  if (caps.whiteBalanceMode?.includes('continuous')) advanced.push({ whiteBalanceMode: 'continuous' });
+
+  // 2× digital zoom by default → barcodes from 5–15cm distance get more pixels
+  if (caps.zoom) {
+    zoomCaps = caps.zoom;
+    const target = Math.min(2, caps.zoom.max || 1);
+    currentZoom = target;
+    advanced.push({ zoom: target });
+  }
+
+  if (advanced.length) {
+    try { await videoTrack.applyConstraints({ advanced }); } catch (e) {}
   }
 }
 
-async function tryEnableContinuousFocus(track) {
+function setupZoomUI() {
+  if (!zoomCaps) return;
+  const ctrls = document.getElementById('zoom-controls');
+  ctrls.style.display = 'flex';
+  ctrls.querySelectorAll('.zoom-btn').forEach(btn => {
+    const z = parseFloat(btn.dataset.zoom);
+    if (z > (zoomCaps.max || 1)) btn.style.display = 'none';
+    btn.classList.toggle('active', z === currentZoom);
+  });
+}
+
+async function setZoom(z) {
+  if (!videoTrack || !zoomCaps) return;
+  const target = Math.max(zoomCaps.min || 1, Math.min(z, zoomCaps.max || 1));
   try {
-    const caps = track.getCapabilities ? track.getCapabilities() : {};
-    const advanced = [];
-    if (caps.focusMode && caps.focusMode.includes('continuous')) {
-      advanced.push({ focusMode: 'continuous' });
-    }
-    if (caps.exposureMode && caps.exposureMode.includes('continuous')) {
-      advanced.push({ exposureMode: 'continuous' });
-    }
-    if (caps.whiteBalanceMode && caps.whiteBalanceMode.includes('continuous')) {
-      advanced.push({ whiteBalanceMode: 'continuous' });
-    }
-    if (advanced.length) await track.applyConstraints({ advanced });
-  } catch (e) { /* ignore */ }
+    await videoTrack.applyConstraints({ advanced: [{ zoom: target }] });
+    currentZoom = target;
+    document.querySelectorAll('.zoom-btn').forEach(b => {
+      b.classList.toggle('active', parseFloat(b.dataset.zoom) === z);
+    });
+  } catch (e) {}
 }
 
-function checkTorchSupport(track) {
-  const caps = track.getCapabilities ? track.getCapabilities() : {};
-  if (caps.torch) {
-    document.getElementById('torch-btn').style.display = 'block';
-  }
+function setupTorchUI() {
+  if (!videoTrack || !videoTrack.getCapabilities) return;
+  const caps = videoTrack.getCapabilities();
+  if (caps.torch) document.getElementById('torch-btn').style.display = 'block';
 }
 
 async function toggleTorch() {
@@ -507,35 +526,79 @@ async function toggleTorch() {
     torchOn = !torchOn;
     await videoTrack.applyConstraints({ advanced: [{ torch: torchOn }] });
     document.getElementById('torch-btn').classList.toggle('active', torchOn);
+  } catch (e) { torchOn = false; }
+}
+
+function showDebug() {
+  const s = videoTrack?.getSettings ? videoTrack.getSettings() : {};
+  const decoder = useNative ? 'BarcodeDetector (nativ)' : 'ZXing';
+  document.getElementById('debug-info').textContent =
+    `${decoder} · ${s.width || '?'}×${s.height || '?'} · zoom ${currentZoom}×`;
+}
+
+// ----- Continuous scan loop -----
+function startScanLoop() {
+  stopScanLoop();
+  if (useNative) {
+    scanLoop = setInterval(scanOnceNative, 80);
+  } else {
+    scanLoop = setInterval(scanOnceZXing, 80);
+  }
+}
+
+function stopScanLoop() {
+  if (scanLoop) { clearInterval(scanLoop); scanLoop = null; }
+}
+
+async function scanOnceNative() {
+  if (scanLocked) return;
+  const video = document.getElementById('video');
+  if (!video.videoWidth) return;
+  try {
+    const codes = await nativeDetector.detect(video);
+    if (codes && codes.length) {
+      handleScan(codes[0].rawValue);
+    }
+  } catch (e) {}
+}
+
+async function scanOnceZXing() {
+  if (scanLocked || !zxingReader) return;
+  const video = document.getElementById('video');
+  if (!video.videoWidth) return;
+  try {
+    const result = await zxingReader.decodeOnceFromVideoElement(video);
+    if (result) handleScan(result.getText());
   } catch (e) {
-    torchOn = false;
+    // NotFoundException is expected when no barcode is in frame
   }
 }
 
 function stopCamera() {
-  if (codeReader) {
-    try { codeReader.reset(); } catch (e) {}
-    codeReader = null;
+  stopScanLoop();
+  if (zxingReader) { try { zxingReader.reset(); } catch (e) {} zxingReader = null; }
+  if (videoStream) {
+    videoStream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} });
+    videoStream = null;
   }
-  if (videoTrack) {
-    try { videoTrack.stop(); } catch (e) {}
-    videoTrack = null;
-  }
+  videoTrack = null;
   torchOn = false;
+  nativeDetector = null;
+  useNative = false;
 }
 
+// ----- Scan handling -----
 function handleScan(code) {
   const now = Date.now();
-  // ignore same code re-scanned within 2.5s, and any scan while a result is open
   if (scanLocked) return;
-  if (code === lastScannedCode && (now - lastScannedAt) < 2500) return;
+  if (code === lastScannedCode && (now - lastScannedAt) < 2000) return;
 
   lastScannedCode = code;
   lastScannedAt = now;
   scanLocked = true;
 
   flashOverlay();
-  vibrate(50);
+  vibrate(60);
 
   document.getElementById('ean-input').value = code;
   lookupEAN(code);
@@ -560,21 +623,21 @@ function manualLookup() {
 }
 
 function cancelSave() {
-  matchedRecordId = null;
-  matchedEAN = null;
+  matchedRecordId = null; matchedEAN = null;
   document.getElementById('save-section').style.display = 'none';
   showResult(null);
   document.getElementById('ean-input').value = '';
   scanLocked = false;
+  lastScannedCode = null;
   setStatus('Bereit zum Scannen');
 }
 
+// ----- Airtable lookup -----
 async function lookupEAN(ean) {
   setStatus('Suche…');
   showResult(null);
   document.getElementById('save-section').style.display = 'none';
-  matchedRecordId = null;
-  matchedEAN = null;
+  matchedRecordId = null; matchedEAN = null;
 
   try {
     const formula = encodeURIComponent(`{EAN}="${ean}"`);
@@ -583,17 +646,14 @@ async function lookupEAN(ean) {
     const url = `https://api.airtable.com/v0/${BASE_ID}/${EAN_TBL}?filterByFormula=${formula}&${fields}&maxRecords=1`;
 
     const res = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
-
     if (!res.ok) {
       const err = await res.json();
       throw new Error(err.error?.message || `API-Fehler ${res.status}`);
     }
-
     const data = await res.json();
 
     if (!data.records || data.records.length === 0) {
-      notFound++;
-      updateCounter();
+      notFound++; updateCounter();
       showResult({ ok: false, message: `EAN "${ean}" nicht gefunden.` });
       setStatus('Nicht gefunden');
       scanLocked = false;
@@ -602,7 +662,6 @@ async function lookupEAN(ean) {
 
     const rec = data.records[0];
     const f   = rec.fields;
-
     const sku   = f[EAN_SKU]   || '–';
     const color = Array.isArray(f[EAN_COLOR]) ? f[EAN_COLOR].join(', ') : (f[EAN_COLOR] || '–');
     const size  = f[EAN_SIZE]  ? (typeof f[EAN_SIZE] === 'object' ? f[EAN_SIZE].name : f[EAN_SIZE]) : '–';
@@ -628,9 +687,7 @@ function showResult(data) {
   const card   = document.getElementById('result-card');
   const title  = document.getElementById('result-title');
   const detail = document.getElementById('result-detail');
-
   if (!data) { card.style.display = 'none'; card.className = 'result-card'; return; }
-
   card.style.display = 'block';
   if (!data.ok) {
     card.className = 'result-card error';
@@ -646,13 +703,12 @@ function showResult(data) {
   }
 }
 
+// ----- Airtable save -----
 async function saveRecord() {
   if (!matchedRecordId) return;
-
-  // hard guard: record ID must be a non-empty string starting with "rec"
   const recId = String(matchedRecordId);
   if (!recId.startsWith('rec')) {
-    alert('Interner Fehler: ungültige Record ID (' + recId + '). Bitte erneut scannen.');
+    alert('Ungültige Record ID: ' + recId);
     return;
   }
 
@@ -666,17 +722,15 @@ async function saveRecord() {
     const body = {
       fields: {
         [INV_EAN_BC]:  { text: String(matchedEAN) },
-        [INV_LINK]:    [recId],   // simpler array-of-strings format
+        [INV_LINK]:    [recId],
         [INV_DATUM]:   today,
       }
     };
-
     const res = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${INV_TBL}`, {
       method:  'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body:    JSON.stringify(body),
     });
-
     if (!res.ok) {
       const err = await res.json();
       throw new Error(err.error?.message || `Speicherfehler ${res.status}`);
@@ -691,10 +745,9 @@ async function saveRecord() {
     document.getElementById('ean-input').value = '';
     showResult(null);
     setStatus(`✓ Gespeichert (${scanned} gesamt)`);
-    setTimeout(() => setStatus('Bereit zum Scannen'), 2000);
+    setTimeout(() => setStatus('Bereit zum Scannen'), 1500);
 
-    matchedRecordId = null;
-    matchedEAN      = null;
+    matchedRecordId = null; matchedEAN = null;
 
   } catch (e) {
     alert('Fehler beim Speichern: ' + e.message);
@@ -702,55 +755,19 @@ async function saveRecord() {
 
   btn.innerHTML = '✓ In Airtable speichern';
   btn.disabled  = false;
-  scanLocked      = false;
-  lastScannedCode = null;   // allow immediate re-scan of any code
+  scanLocked     = false;
+  lastScannedCode = null;
   lastScannedAt   = 0;
-
-  // safety: restart the scanner loop after each save so it never gets stuck
-  await restartScanner();
-}
-
-async function restartScanner() {
-  if (!codeReader) return;
-  try {
-    codeReader.reset();
-  } catch (e) {}
-  // wait one frame then re-attach
-  await new Promise(r => setTimeout(r, 100));
-  const video = document.getElementById('video');
-  try {
-    await codeReader.decodeFromConstraints(
-      {
-        video: {
-          facingMode: { ideal: 'environment' },
-          width:  { ideal: 1920 },
-          height: { ideal: 1080 },
-        }
-      },
-      video,
-      (result) => { if (result) handleScan(result.getText()); }
-    );
-    const stream = video.srcObject;
-    if (stream) {
-      videoTrack = stream.getVideoTracks()[0];
-      tryEnableContinuousFocus(videoTrack);
-    }
-  } catch (e) {
-    setStatus('Scanner-Neustart fehlgeschlagen – Seite neu laden');
-  }
 }
 
 function addHistory(ean, desc) {
   scanHistory.unshift({ ean, desc });
   if (scanHistory.length > 10) scanHistory.pop();
-
   document.getElementById('history-list').innerHTML = scanHistory.map(h =>
     `<div class="history-item">
       <div class="history-sku">${h.desc}</div>
       <div class="history-meta">${h.ean}</div>
-    </div>`
-  ).join('');
-
+    </div>`).join('');
   document.getElementById('history-section').style.display = 'block';
 }
 
@@ -764,9 +781,7 @@ function setStatus(msg) {
   document.getElementById('header-status').textContent = msg;
 }
 
-function vibrate(pattern) {
-  if (navigator.vibrate) navigator.vibrate(pattern);
-}
+function vibrate(p) { if (navigator.vibrate) navigator.vibrate(p); }
 </script>
 </body>
 </html>
