@@ -649,6 +649,13 @@ function showResult(data) {
 async function saveRecord() {
   if (!matchedRecordId) return;
 
+  // hard guard: record ID must be a non-empty string starting with "rec"
+  const recId = String(matchedRecordId);
+  if (!recId.startsWith('rec')) {
+    alert('Interner Fehler: ungültige Record ID (' + recId + '). Bitte erneut scannen.');
+    return;
+  }
+
   const btn = document.getElementById('save-btn');
   btn.innerHTML = '<span class="spinner"></span>Speichern…';
   btn.disabled  = true;
@@ -658,8 +665,8 @@ async function saveRecord() {
   try {
     const body = {
       fields: {
-        [INV_EAN_BC]:  { text: matchedEAN },
-        [INV_LINK]:    [{ id: matchedRecordId }],
+        [INV_EAN_BC]:  { text: String(matchedEAN) },
+        [INV_LINK]:    [recId],   // simpler array-of-strings format
         [INV_DATUM]:   today,
       }
     };
