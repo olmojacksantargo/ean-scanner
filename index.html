@@ -652,18 +652,38 @@ async function scanOnceNative() {
   } catch (e) { lastDecoderError = e.message || String(e); }
 }
 
+function decodeCanvasWithZxing(canvas) {
+  // ZXing 0.21+ exposes `decode(element)` on BrowserCodeReader (handles canvas)
+  if (typeof zxingReader.decode === 'function') {
+    return zxingReader.decode(canvas);
+  }
+  // Some versions expose decodeFromCanvas
+  if (typeof zxingReader.decodeFromCanvas === 'function') {
+    return zxingReader.decodeFromCanvas(canvas);
+  }
+  // Manual low-level fallback
+  const Z = window.ZXing;
+  if (Z?.HTMLCanvasElementLuminanceSource && Z?.HybridBinarizer && Z?.BinaryBitmap) {
+    const ls  = new Z.HTMLCanvasElementLuminanceSource(canvas);
+    const bin = new Z.BinaryBitmap(new Z.HybridBinarizer(ls));
+    return zxingReader.decodeBitmap(bin);
+  }
+  throw new Error('No ZXing decode method available');
+}
+
 function scanOnceZXing() {
   if (scanLocked || !zxingReader) return;
   const canvas = captureFrame();
   if (!canvas) return;
   scanAttempts++;
   try {
-    const result = zxingReader.decodeFromCanvas(canvas);
+    const result = decodeCanvasWithZxing(canvas);
     if (result) handleScan(result.getText());
   } catch (e) {
     // NotFoundException = no barcode in frame (expected most of the time)
     const name = e?.name || '';
-    if (name && name !== 'NotFoundException' && name !== 'NotFoundException2') {
+    if (name && name !== 'NotFoundException' && name !== 'NotFoundException2'
+        && name !== 'ChecksumException' && name !== 'FormatException') {
       lastDecoderError = name + ': ' + (e.message || '');
     }
   }
