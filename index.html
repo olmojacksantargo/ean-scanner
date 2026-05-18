@@ -2,215 +2,229 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>EAN Scanner – Inventory Office</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>EAN Scanner</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f7f6f3;
+  --surface: #ffffff;
+  --border: rgba(0,0,0,0.1);
+  --text: #1a1a1a;
+  --muted: #6b6b6b;
+  --green: #1D9E75;
+  --green-light: #E1F5EE;
+  --red: #E24B4A;
+  --red-light: #FCEBEB;
+  --amber: #BA7517;
+  --amber-light: #FAEEDA;
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
   :root {
-    --bg: #f7f6f3;
-    --surface: #ffffff;
-    --border: rgba(0,0,0,0.1);
-    --text: #1a1a1a;
-    --muted: #6b6b6b;
-    --green: #1D9E75;
-    --green-light: #E1F5EE;
-    --red: #E24B4A;
-    --red-light: #FCEBEB;
-    --amber: #BA7517;
-    --amber-light: #FAEEDA;
-    --radius: 14px;
+    --bg: #1a1a18;
+    --surface: #242422;
+    --border: rgba(255,255,255,0.1);
+    --text: #f0ede6;
+    --muted: #9a9990;
+    --green-light: #04342C;
+    --red-light: #501313;
+    --amber-light: #412402;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #1a1a18;
-      --surface: #242422;
-      --border: rgba(255,255,255,0.1);
-      --text: #f0ede6;
-      --muted: #9a9990;
-      --green-light: #04342C;
-      --red-light: #501313;
-      --amber-light: #412402;
-    }
-  }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    min-height: 100vh;
-    padding: 0;
-  }
-  header {
-    background: var(--surface);
-    border-bottom: 0.5px solid var(--border);
-    padding: 16px 20px 12px;
-    position: sticky;
-    top: 0;
-    z-index: 10;
-  }
-  header h1 { font-size: 17px; font-weight: 600; }
-  header p { font-size: 12px; color: var(--muted); margin-top: 2px; }
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+header {
+  background: var(--surface);
+  border-bottom: 0.5px solid var(--border);
+  padding: 16px 20px 12px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+header h1 { font-size: 17px; font-weight: 600; }
+header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
 
-  .section { padding: 16px 16px 0; }
-  .label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+.section { padding: 16px 16px 0; }
+.label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
 
-  .card {
-    background: var(--surface);
-    border: 0.5px solid var(--border);
-    border-radius: var(--radius);
-    overflow: hidden;
-  }
-  .card-row {
-    display: flex;
-    align-items: center;
-    padding: 13px 16px;
-    gap: 12px;
-    border-bottom: 0.5px solid var(--border);
-  }
-  .card-row:last-child { border-bottom: none; }
-  .card-row label { font-size: 14px; color: var(--muted); flex-shrink: 0; width: 80px; }
-  .card-row input, .card-row textarea {
-    flex: 1;
-    background: transparent;
-    border: none;
-    outline: none;
-    font-size: 14px;
-    color: var(--text);
-    font-family: inherit;
-    -webkit-appearance: none;
-  }
-  .card-row textarea { resize: none; }
+.card {
+  background: var(--surface);
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.card-row {
+  display: flex;
+  align-items: center;
+  padding: 13px 16px;
+  gap: 12px;
+  border-bottom: 0.5px solid var(--border);
+}
+.card-row:last-child { border-bottom: none; }
+.card-row label { font-size: 14px; color: var(--muted); flex-shrink: 0; width: 80px; }
+.card-row input, .card-row textarea {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 14px;
+  color: var(--text);
+  font-family: inherit;
+  -webkit-appearance: none;
+}
+.card-row textarea { resize: none; }
 
-  #viewer-container {
-    width: 100%;
-    background: #000;
-    position: relative;
-    overflow: hidden;
-    display: none;
-    border-radius: var(--radius);
-  }
-  #viewer-container video { width: 100%; display: block; }
-  #scan-overlay {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .scan-frame {
-    width: 220px;
-    height: 100px;
-    position: relative;
-  }
-  .scan-frame::before, .scan-frame::after,
-  .scan-frame span::before, .scan-frame span::after {
-    content: '';
-    position: absolute;
-    width: 24px;
-    height: 24px;
-    border-color: #fff;
-    border-style: solid;
-  }
-  .scan-frame::before { top: 0; left: 0; border-width: 3px 0 0 3px; }
-  .scan-frame::after { top: 0; right: 0; border-width: 3px 3px 0 0; }
-  .scan-frame span::before { bottom: 0; left: 0; border-width: 0 0 3px 3px; }
-  .scan-frame span::after { bottom: 0; right: 0; border-width: 0 3px 3px 0; }
+/* Camera */
+#cam-wrapper {
+  width: 100%;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #000;
+  aspect-ratio: 4/3;
+  position: relative;
+}
+#reader {
+  width: 100%;
+  height: 100%;
+}
+/* hide html5-qrcode default header/footer elements */
+#reader > img,
+#reader__header_message,
+#reader__status_span,
+#reader__dashboard_section_swaplink,
+#reader__dashboard,
+#reader__filescan_input { display: none !important; }
+#reader video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+#reader canvas { display: none !important; }
 
-  .scan-line {
-    position: absolute;
-    left: 8px;
-    right: 8px;
-    height: 2px;
-    background: rgba(29,158,117,0.9);
-    top: 50%;
-    animation: scanline 1.8s ease-in-out infinite;
-  }
-  @keyframes scanline {
-    0%, 100% { top: 15%; }
-    50% { top: 85%; }
-  }
+/* scan line overlay — pointer-events: none so it doesn't block the scanner */
+#scan-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 2;
+}
+.scan-frame {
+  width: 240px;
+  height: 110px;
+  position: relative;
+}
+.scan-frame::before, .scan-frame::after,
+.scan-frame span::before, .scan-frame span::after {
+  content: '';
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-color: #fff;
+  border-style: solid;
+}
+.scan-frame::before  { top: 0;    left: 0;  border-width: 3px 0 0 3px; }
+.scan-frame::after   { top: 0;    right: 0; border-width: 3px 3px 0 0; }
+.scan-frame span::before { bottom: 0; left: 0;  border-width: 0 0 3px 3px; }
+.scan-frame span::after  { bottom: 0; right: 0; border-width: 0 3px 3px 0; }
+.scan-line {
+  position: absolute;
+  left: 8px; right: 8px;
+  height: 2px;
+  background: rgba(29,158,117,0.9);
+  animation: scanline 1.8s ease-in-out infinite;
+}
+@keyframes scanline {
+  0%, 100% { top: 10%; }
+  50%       { top: 90%; }
+}
 
-  .btn {
-    width: 100%;
-    padding: 15px;
-    border: none;
-    border-radius: var(--radius);
-    font-size: 16px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: opacity 0.15s;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .btn:active { opacity: 0.75; }
-  .btn-primary { background: var(--green); color: #fff; }
-  .btn-secondary { background: var(--surface); border: 0.5px solid var(--border); color: var(--text); }
-  .btn-danger { background: var(--red); color: #fff; }
+.btn {
+  width: 100%;
+  padding: 15px;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn:active { opacity: 0.75; }
+.btn-primary   { background: var(--green);   color: #fff; }
+.btn-secondary { background: var(--surface); border: 0.5px solid var(--border); color: var(--text); }
+.btn-red       { background: var(--red);     color: #fff; }
 
-  .result-card {
-    background: var(--green-light);
-    border: 0.5px solid var(--green);
-    border-radius: var(--radius);
-    padding: 14px 16px;
-    display: none;
-  }
-  .result-card.error {
-    background: var(--red-light);
-    border-color: var(--red);
-  }
-  .result-title { font-size: 15px; font-weight: 600; color: var(--green); margin-bottom: 6px; }
-  .result-card.error .result-title { color: var(--red); }
-  .result-detail { font-size: 13px; color: var(--text); line-height: 1.6; }
-  .result-badge {
-    display: inline-block;
-    background: rgba(29,158,117,0.15);
-    color: var(--green);
-    border-radius: 6px;
-    padding: 2px 8px;
-    font-size: 12px;
-    font-weight: 600;
-    margin-right: 4px;
-  }
+.result-card {
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: none;
+}
+.result-card.success { background: var(--green-light); border: 0.5px solid var(--green); }
+.result-card.error   { background: var(--red-light);   border: 0.5px solid var(--red); }
+.result-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+.result-card.success .result-title { color: var(--green); }
+.result-card.error   .result-title { color: var(--red); }
+.result-detail { font-size: 13px; color: var(--text); line-height: 1.6; }
+.result-badge {
+  display: inline-block;
+  background: rgba(29,158,117,0.15);
+  color: var(--green);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-right: 4px;
+}
 
-  .counter {
-    background: var(--amber-light);
-    border: 0.5px solid var(--amber);
-    border-radius: var(--radius);
-    padding: 12px 16px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    display: none;
-  }
-  .counter-num { font-size: 28px; font-weight: 700; color: var(--amber); }
-  .counter-label { font-size: 12px; color: var(--muted); }
+.counter {
+  background: var(--amber-light);
+  border: 0.5px solid var(--amber);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  display: none;
+  justify-content: space-between;
+  align-items: center;
+}
+.counter-num   { font-size: 28px; font-weight: 700; color: var(--amber); }
+.counter-label { font-size: 12px; color: var(--muted); }
 
-  #setup-view, #scanner-view { }
-  #scanner-view { display: none; }
+.history-item { padding: 10px 16px; border-bottom: 0.5px solid var(--border); font-size: 13px; }
+.history-item:last-child { border-bottom: none; }
+.history-sku  { font-weight: 600; }
+.history-meta { color: var(--muted); margin-top: 2px; }
 
-  .spacer { height: 16px; }
-  .spacer-sm { height: 10px; }
-  .pb { padding-bottom: 40px; }
+.spinner {
+  display: inline-block;
+  width: 16px; height: 16px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
-  .spinner {
-    display: inline-block;
-    width: 16px; height: 16px;
-    border: 2px solid rgba(255,255,255,0.3);
-    border-top-color: #fff;
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-    vertical-align: middle;
-    margin-right: 6px;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
+#scanner-view { display: none; }
+.spacer    { height: 16px; }
+.spacer-sm { height: 10px; }
+.pb        { padding-bottom: 48px; }
 
-  .history-item {
-    padding: 10px 16px;
-    border-bottom: 0.5px solid var(--border);
-    font-size: 13px;
-  }
-  .history-item:last-child { border-bottom: none; }
-  .history-item-sku { font-weight: 600; }
-  .history-item-meta { color: var(--muted); margin-top: 2px; }
+.cam-status {
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+  padding: 12px 0 0;
+}
 </style>
 </head>
 <body>
@@ -218,10 +232,9 @@
 <!-- SETUP VIEW -->
 <div id="setup-view">
   <header>
-    <h1>📦 Inventory Office Scanner</h1>
-    <p>Airtable EAN → Inventory Office</p>
+    <h1>📦 EAN Scanner</h1>
+    <p>Einmalig API Key eingeben</p>
   </header>
-
   <div class="section">
     <div class="spacer"></div>
     <div class="label">Airtable API Key</div>
@@ -232,13 +245,12 @@
       </div>
     </div>
     <div class="spacer-sm"></div>
-    <p style="font-size: 12px; color: var(--muted); padding: 0 4px;">
-      Deinen API Key findest du in Airtable → Account → Developer Hub. Er wird nur lokal in dieser Seite verwendet und nirgendwo gespeichert.
+    <p style="font-size:12px;color:var(--muted);padding:0 4px">
+      Airtable → Account → Developer Hub. Wird lokal gespeichert, nur auf diesem Gerät.
     </p>
   </div>
-
   <div class="section"><div class="spacer"></div>
-    <button class="btn btn-primary" onclick="startScanner()">Scanner starten</button>
+    <button class="btn btn-primary" onclick="startApp()">Los geht's →</button>
   </div>
 </div>
 
@@ -246,38 +258,18 @@
 <div id="scanner-view">
   <header>
     <h1>📦 EAN Scanner</h1>
-    <p id="header-status">Bereit zum Scannen</p>
+    <p id="header-status">Kamera wird gestartet…</p>
   </header>
 
   <div class="section">
     <div class="spacer"></div>
-
-    <!-- Kamera -->
-    <div id="viewer-container">
+    <div id="cam-wrapper">
       <div id="reader"></div>
       <div id="scan-overlay">
-        <div class="scan-frame">
-          <span></span>
-          <div class="scan-line"></div>
-        </div>
+        <div class="scan-frame"><span></span><div class="scan-line"></div></div>
       </div>
     </div>
-
-    <div class="spacer-sm"></div>
-    <button class="btn btn-secondary" id="cam-btn" onclick="toggleCamera()">📷 Kamera aktivieren</button>
-  </div>
-
-  <div class="section"><div class="spacer"></div>
-    <div class="label">Manuell eingeben</div>
-    <div class="card">
-      <div class="card-row">
-        <label>EAN</label>
-        <input type="text" id="ean-input" placeholder="4001234567890" inputmode="numeric"
-          onkeydown="if(event.key==='Enter') lookupEAN()">
-      </div>
-    </div>
-    <div class="spacer-sm"></div>
-    <button class="btn btn-primary" id="lookup-btn" onclick="lookupEAN()">EAN suchen</button>
+    <p class="cam-status" id="cam-status">Barcode in den Rahmen halten</p>
   </div>
 
   <!-- Ergebnis -->
@@ -288,17 +280,26 @@
     </div>
   </div>
 
-  <!-- Notiz + Speichern -->
+  <!-- Speichern -->
   <div class="section" id="save-section" style="display:none">
     <div class="spacer"></div>
-    <div class="label">Notiz (optional)</div>
+    <button class="btn btn-primary" id="save-btn" onclick="saveRecord()">✓ In Airtable speichern</button>
+    <div class="spacer-sm"></div>
+    <button class="btn btn-secondary" onclick="cancelSave()">Abbrechen</button>
+  </div>
+
+  <!-- Manuell -->
+  <div class="section"><div class="spacer"></div>
+    <div class="label">Manuell eingeben</div>
     <div class="card">
       <div class="card-row">
-        <textarea id="notiz-input" rows="2" placeholder="z.B. beschädigt, falsch geliefert…"></textarea>
+        <label>EAN</label>
+        <input type="text" id="ean-input" placeholder="4001234567890" inputmode="numeric"
+          onkeydown="if(event.key==='Enter') manualLookup()">
       </div>
     </div>
     <div class="spacer-sm"></div>
-    <button class="btn btn-primary" id="save-btn" onclick="saveRecord()">✓ In Airtable speichern</button>
+    <button class="btn btn-secondary" onclick="manualLookup()">EAN suchen</button>
   </div>
 
   <!-- Counter -->
@@ -306,7 +307,7 @@
     <div class="counter" id="counter">
       <div>
         <div class="counter-num" id="counter-num">0</div>
-        <div class="counter-label">Einträge erstellt</div>
+        <div class="counter-label">Gespeichert</div>
       </div>
       <div style="text-align:right">
         <div class="counter-num" id="counter-err" style="color:var(--red)">0</div>
@@ -323,14 +324,14 @@
   </div>
 
   <div class="section pb"><div class="spacer"></div>
-    <button class="btn btn-secondary" onclick="goBack()">← Zurück / API Key ändern</button>
+    <button class="btn btn-secondary" onclick="resetApp()">⚙ API Key ändern</button>
   </div>
 </div>
 
 <script>
-const BASE_ID   = 'appCrbJojuKd2ifEp';
-const EAN_TBL   = 'tblQQXW4WP1mXfapz';
-const INV_TBL   = 'tblQQ91QHguUVv1CH';
+const BASE_ID = 'appCrbJojuKd2ifEp';
+const EAN_TBL = 'tblQQXW4WP1mXfapz';
+const INV_TBL = 'tblQQ91QHguUVv1CH';
 
 const EAN_FLD   = 'fldKzKwU451IfDWtI';
 const EAN_SKU   = 'fldPlpOKlUR8gVB3A';
@@ -347,100 +348,122 @@ const INV_NOTIZEN = 'fldAYbWHqpOT5ZIkr';
 let apiKey = '';
 let matchedRecordId = null;
 let matchedEAN = null;
+let matchedDesc = '';
 let scanned = 0;
 let notFound = 0;
-let history = [];
-let html5Scanner = null;
-let cameraActive = false;
+let scanHistory = [];
+let scanner = null;
+let scanLocked = false; // debounce: ignore new scans while processing
 
 window.addEventListener('DOMContentLoaded', () => {
   const saved = localStorage.getItem('airtable_api_key');
   if (saved) {
     apiKey = saved;
-    document.getElementById('setup-view').style.display = 'none';
-    document.getElementById('scanner-view').style.display = 'block';
+    showScannerView();
   }
 });
 
-function startScanner() {
+function startApp() {
   apiKey = document.getElementById('api-key').value.trim();
-  if (!apiKey) { alert('Bitte deinen Airtable API Key eingeben.'); return; }
+  if (!apiKey) { alert('Bitte Airtable API Key eingeben.'); return; }
   localStorage.setItem('airtable_api_key', apiKey);
+  showScannerView();
+}
+
+function showScannerView() {
   document.getElementById('setup-view').style.display = 'none';
   document.getElementById('scanner-view').style.display = 'block';
+  startCamera();
 }
 
-function goBack() {
+function resetApp() {
   stopCamera();
+  localStorage.removeItem('airtable_api_key');
+  apiKey = '';
   document.getElementById('scanner-view').style.display = 'none';
   document.getElementById('setup-view').style.display = 'block';
+  document.getElementById('api-key').value = '';
 }
 
-async function toggleCamera() {
-  if (cameraActive) { stopCamera(); return; }
-  const container = document.getElementById('viewer-container');
-  container.style.display = 'block';
-  document.getElementById('cam-btn').textContent = '⏹ Kamera stoppen';
-  cameraActive = true;
+async function startCamera() {
+  setStatus('Kamera wird gestartet…');
+  document.getElementById('cam-status').textContent = 'Barcode in den Rahmen halten';
 
-  html5Scanner = new Html5Qrcode('reader');
   try {
-    await html5Scanner.start(
+    scanner = new Html5Qrcode('reader', { verbose: false });
+    await scanner.start(
       { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 250, height: 100 }, formatsToSupport: [
-        Html5QrcodeSupportedFormats.EAN_13,
-        Html5QrcodeSupportedFormats.EAN_8,
-        Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.UPC_A,
-      ]},
-      (decodedText) => {
-        document.getElementById('ean-input').value = decodedText;
-        lookupEAN();
+      {
+        fps: 12,
+        qrbox: { width: 260, height: 110 },
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E,
+        ],
+        aspectRatio: 1.333,
       },
-      () => {}
+      onScanSuccess,
+      () => {} // ignore scan errors (no barcode found in frame)
     );
-    container.style.height = container.offsetWidth * 0.6 + 'px';
-  } catch(e) {
-    alert('Kamera konnte nicht gestartet werden: ' + e);
-    stopCamera();
+    setStatus('Bereit zum Scannen');
+  } catch (e) {
+    setStatus('Kamera nicht verfügbar');
+    document.getElementById('cam-status').textContent =
+      'Kamerazugriff verweigert oder nicht verfügbar. Bitte EAN manuell eingeben.';
   }
 }
 
 function stopCamera() {
-  if (html5Scanner) {
-    html5Scanner.stop().catch(()=>{});
-    html5Scanner = null;
+  if (scanner) {
+    scanner.stop().catch(() => {});
+    scanner = null;
   }
-  document.getElementById('viewer-container').style.display = 'none';
-  document.getElementById('cam-btn').textContent = '📷 Kamera aktivieren';
-  cameraActive = false;
 }
 
-async function lookupEAN() {
+function onScanSuccess(ean) {
+  if (scanLocked) return; // debounce: one scan at a time
+  scanLocked = true;
+  document.getElementById('ean-input').value = ean;
+  lookupEAN(ean);
+}
+
+function manualLookup() {
   const ean = document.getElementById('ean-input').value.trim();
   if (!ean) return;
+  scanLocked = true;
+  lookupEAN(ean);
+}
 
-  const btn = document.getElementById('lookup-btn');
-  btn.innerHTML = '<span class="spinner"></span> Suche…';
-  btn.disabled = true;
-
+function cancelSave() {
   matchedRecordId = null;
   matchedEAN = null;
   document.getElementById('save-section').style.display = 'none';
   showResult(null);
+  document.getElementById('ean-input').value = '';
+  scanLocked = false;
+}
+
+async function lookupEAN(ean) {
+  setStatus('Suche…');
+  showResult(null);
+  document.getElementById('save-section').style.display = 'none';
+  matchedRecordId = null;
+  matchedEAN = null;
 
   try {
     const formula = encodeURIComponent(`{EAN}="${ean}"`);
-    const fields  = [EAN_FLD, EAN_SKU, EAN_COLOR, EAN_SIZE, EAN_LOT, EAN_DESC].map(f => `fields[]=${f}`).join('&');
+    const fields  = [EAN_FLD, EAN_SKU, EAN_COLOR, EAN_SIZE, EAN_LOT, EAN_DESC]
+                      .map(f => `fields[]=${f}`).join('&');
     const url = `https://api.airtable.com/v0/${BASE_ID}/${EAN_TBL}?filterByFormula=${formula}&${fields}&maxRecords=1`;
 
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${apiKey}` }
-    });
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
 
     if (!res.ok) {
       const err = await res.json();
-      throw new Error(err.error?.message || 'API-Fehler ' + res.status);
+      throw new Error(err.error?.message || `API-Fehler ${res.status}`);
     }
 
     const data = await res.json();
@@ -448,31 +471,35 @@ async function lookupEAN() {
     if (!data.records || data.records.length === 0) {
       notFound++;
       updateCounter();
-      showResult({ error: true, message: `EAN "${ean}" nicht gefunden.` });
-    } else {
-      const rec = data.records[0];
-      const f   = rec.fields;
-
-      const sku   = f[EAN_SKU]   || '–';
-      const color = Array.isArray(f[EAN_COLOR]) ? f[EAN_COLOR].join(', ') : (f[EAN_COLOR] || '–');
-      const size  = f[EAN_SIZE]  ? (typeof f[EAN_SIZE]==='object' ? f[EAN_SIZE].name : f[EAN_SIZE]) : '–';
-      const lot   = Array.isArray(f[EAN_LOT])   ? f[EAN_LOT].join(', ')  : (f[EAN_LOT]  || '–');
-      const desc  = Array.isArray(f[EAN_DESC])  ? f[EAN_DESC].join(', ') : (f[EAN_DESC] || lot);
-
-      matchedRecordId = rec.id;
-      matchedEAN = ean;
-
-      showResult({ error: false, sku, color, size, desc });
-      document.getElementById('save-section').style.display = 'block';
-      document.getElementById('notiz-input').value = '';
-      document.getElementById('notiz-input').focus();
+      showResult({ ok: false, message: `EAN "${ean}" nicht gefunden.` });
+      setStatus('Nicht gefunden');
+      scanLocked = false; // allow next scan
+      return;
     }
-  } catch(e) {
-    showResult({ error: true, message: e.message });
-  }
 
-  btn.innerHTML = 'EAN suchen';
-  btn.disabled = false;
+    const rec = data.records[0];
+    const f   = rec.fields;
+
+    const sku   = f[EAN_SKU]   || '–';
+    const color = Array.isArray(f[EAN_COLOR]) ? f[EAN_COLOR].join(', ') : (f[EAN_COLOR] || '–');
+    const size  = f[EAN_SIZE]  ? (typeof f[EAN_SIZE] === 'object' ? f[EAN_SIZE].name : f[EAN_SIZE]) : '–';
+    const lot   = Array.isArray(f[EAN_LOT])   ? f[EAN_LOT].join(', ')  : (f[EAN_LOT]  || '–');
+    const desc  = Array.isArray(f[EAN_DESC])  ? f[EAN_DESC].join(', ') : (f[EAN_DESC] || lot);
+
+    matchedRecordId = rec.id;
+    matchedEAN      = ean;
+    matchedDesc     = desc;
+
+    showResult({ ok: true, sku, color, size, desc });
+    document.getElementById('save-section').style.display = 'block';
+    setStatus('Gefunden – bitte speichern');
+    vibrate(50);
+
+  } catch (e) {
+    showResult({ ok: false, message: e.message });
+    setStatus('Fehler');
+    scanLocked = false;
+  }
 }
 
 function showResult(data) {
@@ -480,17 +507,17 @@ function showResult(data) {
   const title  = document.getElementById('result-title');
   const detail = document.getElementById('result-detail');
 
-  if (!data) { card.style.display = 'none'; return; }
+  if (!data) { card.style.display = 'none'; card.className = 'result-card'; return; }
 
   card.style.display = 'block';
-  if (data.error) {
-    card.classList.add('error');
+  if (!data.ok) {
+    card.className = 'result-card error';
     title.textContent  = '❌ Nicht gefunden';
     detail.textContent = data.message;
   } else {
-    card.classList.remove('error');
+    card.className = 'result-card success';
     title.textContent = data.desc;
-    detail.innerHTML =
+    detail.innerHTML  =
       `<span class="result-badge">${data.size}</span>` +
       `<span class="result-badge">${data.color}</span>` +
       `<span style="color:var(--muted)">SKU: ${data.sku}</span>`;
@@ -501,86 +528,80 @@ async function saveRecord() {
   if (!matchedRecordId) return;
 
   const btn = document.getElementById('save-btn');
-  btn.innerHTML = '<span class="spinner"></span> Speichern…';
-  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Speichern…';
+  btn.disabled  = true;
 
-  const notiz = document.getElementById('notiz-input').value.trim();
   const today = new Date().toISOString().split('T')[0];
 
   try {
     const body = {
       fields: {
-        [INV_EAN_BC]:  { text: matchedEAN },
+        [INV_EAN_BC]:  matchedEAN,           // plain text field — string only
         [INV_LINK]:    [{ id: matchedRecordId }],
         [INV_DATUM]:   today,
-        [INV_NOTIZEN]: notiz,
       }
     };
 
     const res = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${INV_TBL}`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
+      method:  'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
     });
 
     if (!res.ok) {
       const err = await res.json();
-      throw new Error(err.error?.message || 'Speicherfehler ' + res.status);
+      throw new Error(err.error?.message || `Speicherfehler ${res.status}`);
     }
 
     scanned++;
     updateCounter();
-
-    const detail = document.getElementById('result-detail');
-    const descEl = document.getElementById('result-title');
-    addHistory(matchedEAN, descEl.textContent, detail.textContent);
+    addHistory(matchedEAN, matchedDesc);
+    vibrate([50, 30, 50]);
 
     document.getElementById('save-section').style.display = 'none';
     document.getElementById('ean-input').value = '';
-    document.getElementById('ean-input').focus();
-
-    document.getElementById('header-status').textContent = `✓ Gespeichert – ${scanned} gesamt`;
-    setTimeout(() => {
-      document.getElementById('header-status').textContent = 'Bereit zum Scannen';
-    }, 2000);
+    showResult(null);
+    setStatus(`✓ Gespeichert (${scanned} gesamt)`);
+    setTimeout(() => setStatus('Bereit zum Scannen'), 2500);
 
     matchedRecordId = null;
+    matchedEAN      = null;
 
-    if (cameraActive) {
-      showResult(null);
-    }
-
-  } catch(e) {
+  } catch (e) {
     alert('Fehler beim Speichern: ' + e.message);
   }
 
   btn.innerHTML = '✓ In Airtable speichern';
-  btn.disabled = false;
+  btn.disabled  = false;
+  scanLocked    = false; // ready for next scan
 }
 
-function addHistory(ean, desc, meta) {
-  history.unshift({ ean, desc, meta });
-  if (history.length > 10) history.pop();
+function addHistory(ean, desc) {
+  scanHistory.unshift({ ean, desc });
+  if (scanHistory.length > 10) scanHistory.pop();
 
-  const list = document.getElementById('history-list');
-  list.innerHTML = history.map(h =>
+  document.getElementById('history-list').innerHTML = scanHistory.map(h =>
     `<div class="history-item">
-      <div class="history-item-sku">${h.desc}</div>
-      <div class="history-item-meta">${h.ean} · ${h.meta}</div>
+      <div class="history-sku">${h.desc}</div>
+      <div class="history-meta">${h.ean}</div>
     </div>`
   ).join('');
 
   document.getElementById('history-section').style.display = 'block';
-  document.getElementById('counter').style.display = 'flex';
 }
 
 function updateCounter() {
   document.getElementById('counter-num').textContent = scanned;
   document.getElementById('counter-err').textContent = notFound;
-  document.getElementById('counter').style.display = 'flex';
+  document.getElementById('counter').style.display   = 'flex';
+}
+
+function setStatus(msg) {
+  document.getElementById('header-status').textContent = msg;
+}
+
+function vibrate(pattern) {
+  if (navigator.vibrate) navigator.vibrate(pattern);
 }
 </script>
 </body>
