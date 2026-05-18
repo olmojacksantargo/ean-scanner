@@ -424,6 +424,7 @@ let useNative = false;
 let scanCanvas = null;
 let scanCtx = null;
 let scanAttempts = 0;
+let scanHits = 0;
 let lastDecoderError = '';
 
 let torchOn = false;
@@ -606,7 +607,7 @@ function showDebug() {
   const decoder = useNative ? 'native' : 'zxing';
   const err = lastDecoderError ? ' · ⚠ ' + lastDecoderError : '';
   document.getElementById('debug-info').textContent =
-    `${decoder} · ${s.width || '?'}×${s.height || '?'} · zoom ${currentZoom}× · ${scanAttempts} scans${err}`;
+    `${decoder} · ${s.width || '?'}×${s.height || '?'} · zoom ${currentZoom}× · ${scanAttempts} Versuche · ${scanHits} Treffer${err}`;
 }
 
 // ----- Continuous scan loop (canvas-based, no concurrent decoders) -----
@@ -690,6 +691,7 @@ function handleScan(code) {
   lastScannedCode = code;
   lastScannedAt = now;
   scanLocked = true;
+  scanHits++;
 
   flashOverlay();
   vibrate(60);
