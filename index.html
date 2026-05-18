@@ -358,6 +358,10 @@ let scanLoop = null;
 let zxingReader = null;
 let nativeDetector = null;
 let useNative = false;
+let scanCanvas = null;
+let scanCtx = null;
+let scanAttempts = 0;
+let lastDecoderError = '';
 
 let torchOn = false;
 let currentZoom = 1;
@@ -531,19 +535,36 @@ async function toggleTorch() {
 
 function showDebug() {
   const s = videoTrack?.getSettings ? videoTrack.getSettings() : {};
-  const decoder = useNative ? 'BarcodeDetector (nativ)' : 'ZXing';
+  const decoder = useNative ? 'native' : 'zxing';
+  const err = lastDecoderError ? ' · ⚠ ' + lastDecoderError : '';
   document.getElementById('debug-info').textContent =
-    `${decoder} · ${s.width || '?'}×${s.height || '?'} · zoom ${currentZoom}×`;
+    `${decoder} · ${s.width || '?'}×${s.height || '?'} · zoom ${currentZoom}× · ${scanAttempts} scans${err}`;
 }
 
-// ----- Continuous scan loop -----
+// ----- Continuous scan loop (canvas-based, no concurrent decoders) -----
+function initScanCanvas() {
+  if (scanCanvas) return;
+  scanCanvas = document.createElement('canvas');
+  scanCtx = scanCanvas.getContext('2d', { willReadFrequently: true });
+}
+
+function captureFrame() {
+  const video = document.getElementById('video');
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw || !vh) return null;
+  if (scanCanvas.width !== vw || scanCanvas.height !== vh) {
+    scanCanvas.width = vw;
+    scanCanvas.height = vh;
+  }
+  scanCtx.drawImage(video, 0, 0, vw, vh);
+  return scanCanvas;
+}
+
 function startScanLoop() {
   stopScanLoop();
-  if (useNative) {
-    scanLoop = setInterval(scanOnceNative, 80);
-  } else {
-    scanLoop = setInterval(scanOnceZXing, 80);
-  }
+  initScanCanvas();
+  scanLoop = setInterval(useNative ? scanOnceNative : scanOnceZXing, 70);
+  setInterval(showDebug, 500);
 }
 
 function stopScanLoop() {
@@ -552,25 +573,29 @@ function stopScanLoop() {
 
 async function scanOnceNative() {
   if (scanLocked) return;
-  const video = document.getElementById('video');
-  if (!video.videoWidth) return;
+  const canvas = captureFrame();
+  if (!canvas) return;
+  scanAttempts++;
   try {
-    const codes = await nativeDetector.detect(video);
-    if (codes && codes.length) {
-      handleScan(codes[0].rawValue);
-    }
-  } catch (e) {}
+    const codes = await nativeDetector.detect(canvas);
+    if (codes && codes.length) handleScan(codes[0].rawValue);
+  } catch (e) { lastDecoderError = e.message || String(e); }
 }
 
-async function scanOnceZXing() {
+function scanOnceZXing() {
   if (scanLocked || !zxingReader) return;
-  const video = document.getElementById('video');
-  if (!video.videoWidth) return;
+  const canvas = captureFrame();
+  if (!canvas) return;
+  scanAttempts++;
   try {
-    const result = await zxingReader.decodeOnceFromVideoElement(video);
+    const result = zxingReader.decodeFromCanvas(canvas);
     if (result) handleScan(result.getText());
   } catch (e) {
-    // NotFoundException is expected when no barcode is in frame
+    // NotFoundException = no barcode in frame (expected most of the time)
+    const name = e?.name || '';
+    if (name && name !== 'NotFoundException' && name !== 'NotFoundException2') {
+      lastDecoderError = name + ': ' + (e.message || '');
+    }
   }
 }
 
