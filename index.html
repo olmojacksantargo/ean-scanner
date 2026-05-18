@@ -4,8 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>EAN Scanner</title>
-<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
-<script src="https://unpkg.com/@zxing/browser@0.1.5/umd/index.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@0.19.3/umd/index.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -422,15 +421,13 @@ function resetApp() {
 async function startCamera() {
   setStatus('Kamera wird gestartet…');
 
-  const hints = new Map();
   const ZXing = window.ZXing;
-  const ZXingBrowser = window.ZXingBrowser;
-
-  if (!ZXing || !ZXingBrowser) {
+  if (!ZXing || !ZXing.BrowserMultiFormatReader) {
     setStatus('Scanner-Library konnte nicht geladen werden');
     return;
   }
 
+  const hints = new Map();
   const formats = [
     ZXing.BarcodeFormat.EAN_13,
     ZXing.BarcodeFormat.EAN_8,
@@ -443,10 +440,8 @@ async function startCamera() {
   hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
   hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
 
-  codeReader = new ZXingBrowser.BrowserMultiFormatReader(hints, {
-    delayBetweenScanAttempts: 80,   // try every 80ms instead of default 500ms
-    delayBetweenScanSuccess: 800,
-  });
+  // 2nd arg = timeBetweenScansMillis (default 500). Lower = faster detection.
+  codeReader = new ZXing.BrowserMultiFormatReader(hints, 100);
 
   const constraints = {
     video: {
@@ -459,7 +454,7 @@ async function startCamera() {
   const video = document.getElementById('video');
 
   try {
-    scannerControls = await codeReader.decodeFromConstraints(
+    await codeReader.decodeFromConstraints(
       constraints,
       video,
       (result, err) => {
@@ -467,7 +462,6 @@ async function startCamera() {
       }
     );
 
-    // grab the video track for torch control + continuous focus
     const stream = video.srcObject;
     if (stream) {
       videoTrack = stream.getVideoTracks()[0];
@@ -479,7 +473,7 @@ async function startCamera() {
   } catch (e) {
     setStatus('Kamera nicht verfügbar');
     document.getElementById('cam-status').textContent =
-      'Kamerazugriff verweigert. Bitte in den Browser-Einstellungen erlauben.';
+      'Kamerazugriff verweigert: ' + (e.message || e);
   }
 }
 
@@ -519,15 +513,14 @@ async function toggleTorch() {
 }
 
 function stopCamera() {
-  if (scannerControls) {
-    try { scannerControls.stop(); } catch (e) {}
-    scannerControls = null;
+  if (codeReader) {
+    try { codeReader.reset(); } catch (e) {}
+    codeReader = null;
   }
   if (videoTrack) {
     try { videoTrack.stop(); } catch (e) {}
     videoTrack = null;
   }
-  codeReader = null;
   torchOn = false;
 }
 
