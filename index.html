@@ -536,7 +536,7 @@ async function saveRecord() {
   try {
     const body = {
       fields: {
-        [INV_EAN_BC]:  matchedEAN,           // plain text field — string only
+        [INV_EAN_BC]:  { text: matchedEAN },  // barcode field — needs { text } wrapper
         [INV_LINK]:    [{ id: matchedRecordId }],
         [INV_DATUM]:   today,
       }
