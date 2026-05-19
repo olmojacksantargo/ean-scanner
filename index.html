@@ -4,7 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>EAN Scanner</title>
-<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+
+<!-- Google ML Kit via MediaPipe Tasks Vision (works on iOS Safari) -->
+<script type="module">
+import { BarcodeDetector, FilesetResolver }
+  from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs';
+window._MP = { BarcodeDetector, FilesetResolver };
+document.dispatchEvent(new CustomEvent('mediapipe-ready'));
+</script>
+
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -53,7 +61,6 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
   -webkit-appearance: none;
 }
 
-/* Camera — taller for better close-up framing */
 #cam-wrapper {
   width: 100%;
   border-radius: var(--radius);
@@ -138,6 +145,24 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
 }
 #flash-overlay.flash { opacity: 0.4; }
 
+/* Loading overlay for MediaPipe WASM init */
+#mp-loading {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,0.75);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  z-index: 4; gap: 12px;
+  color: #fff; font-size: 13px;
+}
+#mp-loading .mp-spinner {
+  width: 32px; height: 32px;
+  border: 3px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+#mp-loading.hidden { display: none; }
+
 .btn {
   width: 100%; padding: 15px;
   border: none; border-radius: var(--radius);
@@ -180,7 +205,6 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .counter-num   { font-size: 28px; font-weight: 700; color: var(--amber); }
 .counter-label { font-size: 12px; color: var(--muted); }
 
-/* Scan log table */
 .log-row {
   display: grid;
   grid-template-columns: 56px 1fr 24px;
@@ -320,6 +344,10 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
         <button class="zoom-btn active" data-zoom="2" onclick="setZoom(2)">2×</button>
         <button class="zoom-btn" data-zoom="3" onclick="setZoom(3)">3×</button>
       </div>
+      <div id="mp-loading">
+        <div class="mp-spinner"></div>
+        <span id="mp-loading-text">ML Kit wird geladen…</span>
+      </div>
     </div>
     <p class="cam-status" id="cam-status">Barcode in den Rahmen halten</p>
     <p class="debug" id="debug-info"></p>
@@ -413,18 +441,14 @@ let matchedEAN = null;
 let matchedDesc = '';
 let scanned = 0;
 let notFound = 0;
-let scanLog = [];   // persistent: { ts, ean, desc, status }
+let scanLog = [];
 
 let videoStream = null;
-let videoTrack = null;
-let scanLoop = null;
-let zxingReader = null;
-let nativeDetector = null;
-let useNative = false;
-let scanCanvas = null;
-let scanCtx = null;
-let scanAttempts = 0;
-let scanHits = 0;
+let videoTrack  = null;
+let scanLoop    = null;
+let mpDetector  = null;   // MediaPipe BarcodeDetector instance
+let scanAttempts  = 0;
+let scanHits      = 0;
 let lastDecoderError = '';
 
 let torchOn = false;
@@ -432,10 +456,11 @@ let currentZoom = 1;
 let zoomCaps = null;
 let scanLocked = false;
 let lastScannedCode = null;
-let lastScannedAt = 0;
-let debugInterval = null;
+let lastScannedAt   = 0;
+let debugInterval   = null;
 
 const LOG_KEY = 'ean_scan_log_v1';
+const MP_WASM = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
 
 // ----- Init -----
 window.addEventListener('DOMContentLoaded', () => {
@@ -467,13 +492,12 @@ function resetApp() {
   document.getElementById('api-key').value = '';
 }
 
-// ----- Camera + scanner setup -----
+// ----- Camera setup -----
 async function startCamera() {
   setStatus('Kamera wird gestartet…');
+  showMpLoading('Kamera…');
 
   const video = document.getElementById('video');
-
-  // Request the highest-resolution back camera available
   const constraints = {
     audio: false,
     video: {
@@ -487,10 +511,10 @@ async function startCamera() {
   try {
     videoStream = await navigator.mediaDevices.getUserMedia(constraints);
   } catch (e) {
-    // Fallback to any camera
     try {
       videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
     } catch (e2) {
+      hideMpLoading();
       setStatus('Kein Kamerazugriff');
       document.getElementById('cam-status').textContent = 'Bitte Kamera erlauben: ' + (e2.message || e2);
       return;
@@ -505,45 +529,56 @@ async function startCamera() {
   setupZoomUI();
   setupTorchUI();
 
-  // Decide decoder
-  if ('BarcodeDetector' in window) {
-    try {
-      const formats = await BarcodeDetector.getSupportedFormats();
-      const wanted = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf'];
-      const supported = wanted.filter(f => formats.includes(f));
-      if (supported.length) {
-        nativeDetector = new BarcodeDetector({ formats: supported });
-        useNative = true;
-      }
-    } catch (e) { useNative = false; }
-  }
-
-  if (!useNative) {
-    // ZXing fallback — use core MultiFormatReader (synchronous, no browser wrapper)
-    const ZXing = window.ZXing;
-    if (!ZXing || !ZXing.MultiFormatReader) {
-      setStatus('Scanner-Library fehlt');
-      document.getElementById('cam-status').textContent = 'ZXing nicht geladen – Seite neu laden';
-      return;
-    }
-    const hints = new Map();
-    const fmt = [
-      ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8,
-      ZXing.BarcodeFormat.UPC_A,  ZXing.BarcodeFormat.UPC_E,
-      ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.CODE_39,
-      ZXing.BarcodeFormat.ITF,
-    ];
-    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, fmt);
-    hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-    zxingReader = new ZXing.MultiFormatReader();
-    zxingReader.setHints(hints);
-  }
-
-  startScanLoop();
-  showDebug();
-  setStatus('Bereit zum Scannen');
+  // Init Google ML Kit
+  await initMediaPipe();
 }
 
+// ----- Google ML Kit (MediaPipe Tasks Vision) -----
+async function initMediaPipe() {
+  showMpLoading('ML Kit wird geladen…');
+  try {
+    // Wait for the ES module to finish loading (dispatches 'mediapipe-ready')
+    if (!window._MP) {
+      await new Promise((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error('ML Kit Timeout – Verbindung prüfen')), 20000);
+        document.addEventListener('mediapipe-ready', () => { clearTimeout(t); resolve(); }, { once: true });
+      });
+    }
+
+    showMpLoading('ML Kit initialisiert…');
+    const { BarcodeDetector, FilesetResolver } = window._MP;
+    const vision = await FilesetResolver.forVisionTasks(MP_WASM);
+
+    mpDetector = await BarcodeDetector.createFromOptions(vision, {
+      runningMode: 'VIDEO',
+      barcodeFormats: [
+        'EAN_13', 'EAN_8', 'UPC_A', 'UPC_E',
+        'CODE_128', 'CODE_39', 'ITF_14', 'QR_CODE',
+      ],
+    });
+
+    hideMpLoading();
+    startScanLoop();
+    setStatus('Bereit zum Scannen');
+
+  } catch (e) {
+    hideMpLoading();
+    setStatus('ML Kit Fehler');
+    document.getElementById('cam-status').textContent = e.message || String(e);
+    document.getElementById('debug-info').textContent = 'ML Kit konnte nicht geladen werden';
+  }
+}
+
+function showMpLoading(msg) {
+  const el = document.getElementById('mp-loading');
+  document.getElementById('mp-loading-text').textContent = msg;
+  el.classList.remove('hidden');
+}
+function hideMpLoading() {
+  document.getElementById('mp-loading').classList.add('hidden');
+}
+
+// ----- Camera controls -----
 async function applyOptimalCameraSettings() {
   if (!videoTrack || !videoTrack.getCapabilities) return;
   const caps = videoTrack.getCapabilities();
@@ -553,7 +588,6 @@ async function applyOptimalCameraSettings() {
   if (caps.exposureMode?.includes('continuous'))     advanced.push({ exposureMode: 'continuous' });
   if (caps.whiteBalanceMode?.includes('continuous')) advanced.push({ whiteBalanceMode: 'continuous' });
 
-  // 2× digital zoom by default → barcodes from 5–15cm distance get more pixels
   if (caps.zoom) {
     zoomCaps = caps.zoom;
     const target = Math.min(2, caps.zoom.max || 1);
@@ -606,36 +640,16 @@ async function toggleTorch() {
 
 function showDebug() {
   const s = videoTrack?.getSettings ? videoTrack.getSettings() : {};
-  const decoder = useNative ? 'native' : 'zxing';
   const err = lastDecoderError ? ' · ⚠ ' + lastDecoderError : '';
   document.getElementById('debug-info').textContent =
-    `${decoder} · ${s.width || '?'}×${s.height || '?'} · zoom ${currentZoom}× · ${scanAttempts} Versuche · ${scanHits} Treffer${err}`;
+    `ML Kit · ${s.width || '?'}×${s.height || '?'} · zoom ${currentZoom}× · ${scanAttempts} Versuche · ${scanHits} Treffer${err}`;
 }
 
-// ----- Continuous scan loop (canvas-based, no concurrent decoders) -----
-function initScanCanvas() {
-  if (scanCanvas) return;
-  scanCanvas = document.createElement('canvas');
-  scanCtx = scanCanvas.getContext('2d', { willReadFrequently: true });
-}
-
-function captureFrame() {
-  const video = document.getElementById('video');
-  const vw = video.videoWidth, vh = video.videoHeight;
-  if (!vw || !vh) return null;
-  if (scanCanvas.width !== vw || scanCanvas.height !== vh) {
-    scanCanvas.width = vw;
-    scanCanvas.height = vh;
-  }
-  scanCtx.drawImage(video, 0, 0, vw, vh);
-  return scanCanvas;
-}
-
+// ----- Scan loop -----
 function startScanLoop() {
   stopScanLoop();
-  initScanCanvas();
-  scanLoop = setInterval(useNative ? scanOnceNative : scanOnceZXing, 70);
-  if (!debugInterval) debugInterval = setInterval(showDebug, 500);
+  scanLoop = setInterval(scanOnceMP, 80);
+  if (!debugInterval) debugInterval = setInterval(showDebug, 600);
 }
 
 function stopScanLoop() {
@@ -643,62 +657,31 @@ function stopScanLoop() {
   if (debugInterval) { clearInterval(debugInterval); debugInterval = null; }
 }
 
-async function scanOnceNative() {
-  if (scanLocked) return;
-  const canvas = captureFrame();
-  if (!canvas) return;
+function scanOnceMP() {
+  if (scanLocked || !mpDetector) return;
+  const video = document.getElementById('video');
+  if (!video.videoWidth || video.readyState < 2) return;
   scanAttempts++;
   try {
-    const codes = await nativeDetector.detect(canvas);
-    if (codes && codes.length) handleScan(codes[0].rawValue);
-  } catch (e) { lastDecoderError = e.message || String(e); }
-}
-
-function decodeCanvasWithZxing(canvas) {
-  const Z = window.ZXing;
-  // HTMLCanvasElementLuminanceSource is the fastest path (no extra copy)
-  if (Z?.HTMLCanvasElementLuminanceSource) {
-    const ls  = new Z.HTMLCanvasElementLuminanceSource(canvas);
-    const bin = new Z.BinaryBitmap(new Z.HybridBinarizer(ls));
-    return zxingReader.decode(bin);  // MultiFormatReader.decode(BinaryBitmap) — synchronous
-  }
-  // Fallback: read pixel data manually via RGBLuminanceSource
-  const ctx  = canvas.getContext('2d');
-  const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const ls   = new Z.RGBLuminanceSource(data.data, canvas.width, canvas.height);
-  const bin  = new Z.BinaryBitmap(new Z.HybridBinarizer(ls));
-  return zxingReader.decode(bin);
-}
-
-function scanOnceZXing() {
-  if (scanLocked || !zxingReader) return;
-  const canvas = captureFrame();
-  if (!canvas) return;
-  scanAttempts++;
-  try {
-    const result = decodeCanvasWithZxing(canvas);
-    if (result) handleScan(result.getText());
-  } catch (e) {
-    // NotFoundException = no barcode in frame (expected most of the time)
-    const name = e?.name || '';
-    if (name && name !== 'NotFoundException' && name !== 'NotFoundException2'
-        && name !== 'ChecksumException' && name !== 'FormatException') {
-      lastDecoderError = name + ': ' + (e.message || '');
+    const result = mpDetector.detectForVideo(video, performance.now());
+    if (result?.barcodes?.length > 0) {
+      handleScan(result.barcodes[0].rawValue);
+      scanHits++;
     }
+  } catch (e) {
+    lastDecoderError = (e.message || String(e)).slice(0, 60);
   }
 }
 
 function stopCamera() {
   stopScanLoop();
-  if (zxingReader) { try { zxingReader.reset(); } catch (e) {} zxingReader = null; }
+  mpDetector = null;
   if (videoStream) {
     videoStream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} });
     videoStream = null;
   }
   videoTrack = null;
   torchOn = false;
-  nativeDetector = null;
-  useNative = false;
 }
 
 // ----- Scan handling -----
@@ -708,9 +691,8 @@ function handleScan(code) {
   if (code === lastScannedCode && (now - lastScannedAt) < 2000) return;
 
   lastScannedCode = code;
-  lastScannedAt = now;
-  scanLocked = true;
-  scanHits++;
+  lastScannedAt   = now;
+  scanLocked      = true;
 
   flashOverlay();
   vibrate(60);
@@ -762,9 +744,7 @@ async function lookupEAN(ean) {
 
     const res = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
     if (!res.ok) {
-      if (res.status === 401) {
-        throw new Error('API Key ungültig – bitte unter ⚙ neu eingeben');
-      }
+      if (res.status === 401) throw new Error('API Key ungültig – bitte unter ⚙ neu eingeben');
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error?.message || `API-Fehler ${res.status}`);
     }
@@ -826,10 +806,7 @@ function showResult(data) {
 async function saveRecord() {
   if (!matchedRecordId) return;
   const recId = String(matchedRecordId);
-  if (!recId.startsWith('rec')) {
-    alert('Ungültige Record ID: ' + recId);
-    return;
-  }
+  if (!recId.startsWith('rec')) { alert('Ungültige Record ID: ' + recId); return; }
 
   const btn = document.getElementById('save-btn');
   btn.innerHTML = '<span class="spinner"></span>Speichern…';
@@ -840,9 +817,9 @@ async function saveRecord() {
   try {
     const body = {
       fields: {
-        [INV_EAN_BC]:  { text: String(matchedEAN) },
-        [INV_LINK]:    [recId],
-        [INV_DATUM]:   today,
+        [INV_EAN_BC]: { text: String(matchedEAN) },
+        [INV_LINK]:   [recId],
+        [INV_DATUM]:  today,
       }
     };
     const res = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${INV_TBL}`, {
@@ -894,7 +871,7 @@ function saveLog() {
 
 function addLogEntry({ ean, desc, status }) {
   scanLog.unshift({ ts: Date.now(), ean: String(ean), desc: String(desc || ''), status });
-  if (scanLog.length > 500) scanLog.length = 500;  // sane cap
+  if (scanLog.length > 500) scanLog.length = 500;
   saveLog();
   renderLog();
 }
@@ -914,7 +891,7 @@ function clearLog() {
 }
 
 function renderLog() {
-  const list = document.getElementById('log-list');
+  const list  = document.getElementById('log-list');
   const count = document.getElementById('log-count');
   if (!list) return;
   count.textContent = scanLog.length ? `(${scanLog.length})` : '';
@@ -924,9 +901,8 @@ function renderLog() {
   }
   list.innerHTML = scanLog.map(e => {
     const icon = e.status === 'saved' ? '✓' : e.status === 'notfound' ? '✗' : '!';
-    const time = formatTime(e.ts);
     return `<div class="log-row" onclick="onLogTap(${e.ts})">
-      <div class="log-time">${time}</div>
+      <div class="log-time">${formatTime(e.ts)}</div>
       <div class="log-body">
         <div class="log-desc">${escapeHtml(e.desc) || '–'}</div>
         <div class="log-ean">${escapeHtml(e.ean)}</div>
@@ -967,18 +943,15 @@ function exportLogCSV() {
   const rows = [['Datum', 'Uhrzeit', 'EAN', 'Beschreibung', 'Status']];
   scanLog.forEach(e => {
     const d = new Date(e.ts);
-    const date = d.toLocaleDateString('de-DE');
-    const time = d.toLocaleTimeString('de-DE');
-    rows.push([date, time, e.ean, e.desc, e.status]);
+    rows.push([d.toLocaleDateString('de-DE'), d.toLocaleTimeString('de-DE'), e.ean, e.desc, e.status]);
   });
-  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n');
+  const csv  = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n');
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href = url;
   a.download = `ean-scan-log-${new Date().toISOString().slice(0,10)}.csv`;
-  document.body.appendChild(a);
-  a.click();
+  document.body.appendChild(a); a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
