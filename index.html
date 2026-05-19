@@ -5,13 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>EAN Scanner</title>
 
-<!-- Google ML Kit via MediaPipe Tasks Vision (works on iOS Safari) -->
-<script type="module">
-import { BarcodeDetector, FilesetResolver }
-  from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs';
-window._MP = { BarcodeDetector, FilesetResolver };
-document.dispatchEvent(new CustomEvent('mediapipe-ready'));
-</script>
+<!-- no pre-load script needed; MediaPipe is loaded via dynamic import() in initMediaPipe() -->
 
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -537,16 +531,14 @@ async function startCamera() {
 async function initMediaPipe() {
   showMpLoading('ML Kit wird geladen…');
   try {
-    // Wait for the ES module to finish loading (dispatches 'mediapipe-ready')
-    if (!window._MP) {
-      await new Promise((resolve, reject) => {
-        const t = setTimeout(() => reject(new Error('ML Kit Timeout – Verbindung prüfen')), 20000);
-        document.addEventListener('mediapipe-ready', () => { clearTimeout(t); resolve(); }, { once: true });
-      });
-    }
+    // Dynamic import — works in iOS Safari 11+, no event bus needed
+    const mpModule = await import(
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.js'
+    );
+    const { BarcodeDetector, FilesetResolver } = mpModule;
+    if (!BarcodeDetector || !FilesetResolver) throw new Error('ML Kit Bundle unvollständig');
 
-    showMpLoading('ML Kit initialisiert…');
-    const { BarcodeDetector, FilesetResolver } = window._MP;
+    showMpLoading('Scanner wird initialisiert…');
     const vision = await FilesetResolver.forVisionTasks(MP_WASM);
 
     mpDetector = await BarcodeDetector.createFromOptions(vision, {
@@ -565,7 +557,7 @@ async function initMediaPipe() {
     hideMpLoading();
     setStatus('ML Kit Fehler');
     document.getElementById('cam-status').textContent = e.message || String(e);
-    document.getElementById('debug-info').textContent = 'ML Kit konnte nicht geladen werden';
+    document.getElementById('debug-info').textContent = 'Fehler beim Laden';
   }
 }
 
