@@ -6,11 +6,11 @@
 <title>EAN Scanner</title>
 
 <!--
-  @zxing/library@0.21.3 — reines JavaScript, kein WASM.
-  Funktioniert auf iOS Safari ohne CORS/WASM-Probleme.
-  Wir nutzen MultiFormatReader.decode(BinaryBitmap) — synchron, korrekte API.
+  zxing-wasm@3.0.3 — IIFE-Bundle + WASM-Binary self-hosted im Repo.
+  Same-Origin: kein CORS, kein Content-Type-Problem auf iOS Safari.
+  API: ZXingWASM.readBarcodes(imageData, options) → Promise<Result[]>
 -->
-<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+<script src="./zxing_reader.js"></script>
 
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -134,7 +134,7 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
 <!-- SCANNER VIEW -->
 <div id="scanner-view">
   <header>
-    <h1>📦 EAN Scanner <span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:4px">v15</span></h1>
+    <h1>📦 EAN Scanner <span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:4px">v16</span></h1>
     <p id="header-status">Kamera wird gestartet…</p>
   </header>
 
@@ -230,13 +230,21 @@ const LOG_KEY    = 'ean_scan_log_v1';
 let apiKey = '', matchedRecordId = null, matchedEAN = null, matchedDesc = '';
 let scanned = 0, notFound = 0, scanLog = [];
 
+// ---- WASM setup — must run before any readBarcodes call ----
+const WASM_URL = new URL('./zxing_reader.wasm', window.location.href).href;
+if (window.ZXingWASM) {
+  ZXingWASM.setZXingModuleOverrides({
+    locateFile: (path) => path.endsWith('.wasm') ? WASM_URL : path
+  });
+}
+
 // ---- Camera state ----
 let videoStream = null, videoTrack = null, torchOn = false, currentZoom = 1, zoomCaps = null;
 
 // ---- Scanner state ----
-let codeReader   = null;   // ZXing BrowserMultiFormatReader
-let scanControls = null;   // IScannerControls returned by decodeFromConstraints
-let debugInterval = null;
+let scanning = false, isDecoding = false;
+let frameTimer = null, debugInterval = null;
+let scanCanvas = null, scanCtx = null;
 let scanLocked = false, lastScannedCode = null, lastScannedAt = 0;
 let scanAttempts = 0, scanHits = 0, lastDecodeErr = '';
 
@@ -267,65 +275,97 @@ function resetApp() {
   document.getElementById('api-key').value = '';
 }
 
-// ---- Camera + Scanner (ZXing manages both) ----
+// ---- Camera + Scanner (zxing-wasm self-hosted) ----
 async function startCamera() {
-  setStatus('Kamera wird gestartet…');
-
-  const Z = window.ZXing;
-  if (!Z || !Z.BrowserMultiFormatReader) {
+  if (!window.ZXingWASM) {
     setStatus('Scanner nicht geladen');
-    document.getElementById('cam-status').textContent = 'Seite neu laden (ZXing fehlt)';
+    document.getElementById('cam-status').textContent = 'Seite neu laden (zxing_reader.js fehlt)';
     return;
   }
 
-  const hints = new Map();
-  hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [
-    Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8,
-    Z.BarcodeFormat.UPC_A,  Z.BarcodeFormat.UPC_E,
-    Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.CODE_39, Z.BarcodeFormat.ITF,
-  ]);
-  hints.set(Z.DecodeHintType.TRY_HARDER, true);
-  codeReader = new Z.BrowserMultiFormatReader(hints);
-
-  const video = document.getElementById('video');
-
+  setStatus('WASM wird initialisiert…');
   try {
-    // decodeFromConstraints: ZXing opens camera + runs continuous decode loop.
-    // The callback fires on every frame — result is non-null when a barcode is found.
-    scanControls = await codeReader.decodeFromConstraints(
-      { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } },
-      video,
-      (result, err) => {
-        scanAttempts++;
-        if (result) { scanHits++; handleScan(result.getText()); }
-        if (err && !String(err).includes('NotFoundException')) {
-          lastDecodeErr = String(err.message || err).slice(0, 60);
-        }
-      }
-    );
+    await ZXingWASM.getZXingModule({
+      locateFile: (path) => path.endsWith('.wasm') ? WASM_URL : path
+    });
+  } catch (e) {
+    setStatus('WASM-Fehler');
+    document.getElementById('cam-status').textContent = (e.message || String(e)).slice(0, 120);
+    return;
+  }
+
+  setStatus('Kamera wird gestartet…');
+  try {
+    videoStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+    });
   } catch (e) {
     setStatus('Kamera-Fehler');
     document.getElementById('cam-status').textContent = e.message || String(e);
     return;
   }
 
-  // ZXing has set video.srcObject — grab the track for zoom/torch
-  videoStream = video.srcObject instanceof MediaStream ? video.srcObject : null;
-  videoTrack  = videoStream?.getVideoTracks()[0] || null;
+  const video = document.getElementById('video');
+  video.srcObject = videoStream;
+  await new Promise(res => { video.onloadedmetadata = res; });
+  await video.play().catch(() => {});
+  videoTrack = videoStream.getVideoTracks()[0] || null;
+
+  scanCanvas = document.createElement('canvas');
+  scanCtx = scanCanvas.getContext('2d', { willReadFrequently: true });
+
   await applyOptimalCameraSettings();
   setupZoomUI();
   setupTorchUI();
 
+  scanning = true;
   setStatus('Bereit zum Scannen');
+  scanLoop();
   debugInterval = setInterval(showDebug, 600);
 }
 
+async function scanLoop() {
+  if (!scanning) return;
+
+  const video = document.getElementById('video');
+  if (!isDecoding && video.readyState >= 2 && video.videoWidth > 0) {
+    isDecoding = true;
+    scanAttempts++;
+
+    if (scanCanvas.width  !== video.videoWidth)  scanCanvas.width  = video.videoWidth;
+    if (scanCanvas.height !== video.videoHeight) scanCanvas.height = video.videoHeight;
+    scanCtx.drawImage(video, 0, 0);
+
+    try {
+      const imageData = scanCtx.getImageData(0, 0, scanCanvas.width, scanCanvas.height);
+      const results = await ZXingWASM.readBarcodes(imageData, {
+        tryHarder: true,
+        tryRotate: false,
+        tryInvert: false,
+        tryDownscale: true,
+        maxNumberOfSymbols: 1,
+      });
+      if (results.length > 0 && results[0].text) {
+        scanHits++;
+        handleScan(results[0].text);
+      }
+    } catch (e) {
+      lastDecodeErr = String(e.message || e).slice(0, 60);
+    }
+
+    isDecoding = false;
+  }
+
+  if (scanning) frameTimer = setTimeout(scanLoop, 80);
+}
+
 function stopCamera() {
+  scanning = false;
   if (debugInterval) { clearInterval(debugInterval); debugInterval = null; }
-  if (scanControls)  { try { scanControls.stop(); } catch (_) {} scanControls = null; }
-  if (codeReader)    { try { codeReader.reset();  } catch (_) {} codeReader   = null; }
+  if (frameTimer)    { clearTimeout(frameTimer); frameTimer = null; }
   if (videoStream)   { videoStream.getTracks().forEach(t => { try { t.stop(); } catch (_) {} }); videoStream = null; }
   videoTrack = null; torchOn = false;
+  scanCanvas = null; scanCtx = null; isDecoding = false;
 }
 
 // ---- Camera controls ----
@@ -377,7 +417,7 @@ async function toggleTorch() {
 function showDebug() {
   const s = videoTrack?.getSettings?.() || {};
   document.getElementById('debug-info').textContent =
-    `ZXing-JS · ${s.width||'?'}×${s.height||'?'} · zoom ${currentZoom}× · ${scanAttempts} Vers. · ${scanHits} Treffer` +
+    `ZXing-WASM · ${s.width||'?'}×${s.height||'?'} · zoom ${currentZoom}× · ${scanAttempts} Vers. · ${scanHits} Treffer` +
     (lastDecodeErr ? ' · ⚠ ' + lastDecodeErr : '');
 }
 
