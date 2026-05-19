@@ -519,10 +519,11 @@ async function startCamera() {
   }
 
   if (!useNative) {
-    // ZXing fallback
+    // ZXing fallback — use core MultiFormatReader (synchronous, no browser wrapper)
     const ZXing = window.ZXing;
-    if (!ZXing) {
+    if (!ZXing || !ZXing.MultiFormatReader) {
       setStatus('Scanner-Library fehlt');
+      document.getElementById('cam-status').textContent = 'ZXing nicht geladen – Seite neu laden';
       return;
     }
     const hints = new Map();
@@ -534,7 +535,8 @@ async function startCamera() {
     ];
     hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, fmt);
     hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-    zxingReader = new ZXing.BrowserMultiFormatReader(hints, 80);
+    zxingReader = new ZXing.MultiFormatReader();
+    zxingReader.setHints(hints);
   }
 
   startScanLoop();
@@ -653,22 +655,19 @@ async function scanOnceNative() {
 }
 
 function decodeCanvasWithZxing(canvas) {
-  // ZXing 0.21+ exposes `decode(element)` on BrowserCodeReader (handles canvas)
-  if (typeof zxingReader.decode === 'function') {
-    return zxingReader.decode(canvas);
-  }
-  // Some versions expose decodeFromCanvas
-  if (typeof zxingReader.decodeFromCanvas === 'function') {
-    return zxingReader.decodeFromCanvas(canvas);
-  }
-  // Manual low-level fallback
   const Z = window.ZXing;
-  if (Z?.HTMLCanvasElementLuminanceSource && Z?.HybridBinarizer && Z?.BinaryBitmap) {
+  // HTMLCanvasElementLuminanceSource is the fastest path (no extra copy)
+  if (Z?.HTMLCanvasElementLuminanceSource) {
     const ls  = new Z.HTMLCanvasElementLuminanceSource(canvas);
     const bin = new Z.BinaryBitmap(new Z.HybridBinarizer(ls));
-    return zxingReader.decodeBitmap(bin);
+    return zxingReader.decode(bin);  // MultiFormatReader.decode(BinaryBitmap) — synchronous
   }
-  throw new Error('No ZXing decode method available');
+  // Fallback: read pixel data manually via RGBLuminanceSource
+  const ctx  = canvas.getContext('2d');
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const ls   = new Z.RGBLuminanceSource(data.data, canvas.width, canvas.height);
+  const bin  = new Z.BinaryBitmap(new Z.HybridBinarizer(ls));
+  return zxingReader.decode(bin);
 }
 
 function scanOnceZXing() {
