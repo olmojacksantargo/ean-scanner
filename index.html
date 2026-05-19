@@ -134,7 +134,7 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
 <!-- SCANNER VIEW -->
 <div id="scanner-view">
   <header>
-    <h1>📦 EAN Scanner <span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:4px">v13</span></h1>
+    <h1>📦 EAN Scanner <span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:4px">v14</span></h1>
     <p id="header-status">Kamera wird gestartet…</p>
   </header>
 
@@ -267,10 +267,10 @@ function resetApp() {
   document.getElementById('api-key').value = '';
 }
 
-// ---- ZXing init (pure JS, synchronous, no WASM) ----
+// ---- ZXing init ----
 function initZXing() {
   const Z = window.ZXing;
-  if (!Z || !Z.MultiFormatReader) {
+  if (!Z || !Z.BrowserMultiFormatReader) {
     setStatus('Scanner nicht geladen');
     document.getElementById('cam-status').textContent = 'Seite neu laden (ZXing fehlt)';
     return false;
@@ -282,8 +282,8 @@ function initZXing() {
     Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.CODE_39, Z.BarcodeFormat.ITF,
   ]);
   hints.set(Z.DecodeHintType.TRY_HARDER, true);
-  multiFormatReader = new Z.MultiFormatReader();
-  multiFormatReader.setHints(hints);
+  // 100ms between internal retries — fast enough for continuous scanning
+  multiFormatReader = new Z.BrowserMultiFormatReader(hints, 100);
   return true;
 }
 
@@ -314,11 +314,6 @@ async function startCamera() {
   await applyOptimalCameraSettings();
   setupZoomUI();
   setupTorchUI();
-
-  // Init canvas
-  scanCanvas = document.createElement('canvas');
-  scanCtx    = scanCanvas.getContext('2d', { willReadFrequently: true });
-
   startScanLoop();
   setStatus('Bereit zum Scannen');
 }
@@ -331,46 +326,45 @@ function stopCamera() {
 }
 
 // ---- Scan loop ----
+// async while-loop: always exactly ONE decodeOnceFromVideoElement running.
+// No setInterval stacking — the next call only starts after the previous resolves/rejects.
+let scanActive = false;
+
 function startScanLoop() {
-  stopScanLoop();
-  scanInterval  = setInterval(scanOnce, 100);
+  scanActive    = true;
   debugInterval = setInterval(showDebug, 600);
+  runScanLoop();
 }
+
 function stopScanLoop() {
-  if (scanInterval)  { clearInterval(scanInterval);  scanInterval  = null; }
+  scanActive = false;
   if (debugInterval) { clearInterval(debugInterval); debugInterval = null; }
 }
 
-function scanOnce() {
-  if (scanLocked || !multiFormatReader) return;
+async function runScanLoop() {
   const video = document.getElementById('video');
-  const vw = video.videoWidth, vh = video.videoHeight;
-  if (!vw || !vh) return;
-
-  // Size canvas to video frame
-  if (scanCanvas.width !== vw || scanCanvas.height !== vh) {
-    scanCanvas.width = vw; scanCanvas.height = vh;
-  }
-  scanCtx.drawImage(video, 0, 0, vw, vh);
-
-  scanAttempts++;
-  try {
-    // RGBLuminanceSource reads RGBA pixel data from canvas — pure JS, no WASM
-    const imageData = scanCtx.getImageData(0, 0, vw, vh);
-    const Z       = window.ZXing;
-    const source  = new Z.RGBLuminanceSource(imageData.data, vw, vh);
-    const bitmap  = new Z.BinaryBitmap(new Z.HybridBinarizer(source));
-    const result  = multiFormatReader.decode(bitmap);   // synchronous; throws NotFoundException on miss
-    scanHits++;
-    handleScan(result.getText());
-  } catch (e) {
-    // NotFoundException is the normal "no barcode in frame" case — ignore it
-    const name = e?.name || e?.constructor?.name || '';
-    if (name && name !== 'NotFoundException' && !String(e).includes('NotFoundException')) {
-      lastDecodeErr = (e.message || String(e)).slice(0, 60);
+  while (scanActive) {
+    if (scanLocked || !multiFormatReader) {
+      await sleep(150);
+      continue;
+    }
+    scanAttempts++;
+    try {
+      // decodeOnceFromVideoElement: ZXing captures a frame internally and decodes it.
+      // Confirmed working on iOS Safari — this is the API that worked "at the beginning".
+      const result = await multiFormatReader.decodeOnceFromVideoElement(video);
+      scanHits++;
+      handleScan(result.getText());
+    } catch (e) {
+      const msg = String(e.message || e);
+      if (!msg.includes('NotFoundException')) {
+        lastDecodeErr = msg.slice(0, 60);
+      }
     }
   }
 }
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ---- Camera controls ----
 async function applyOptimalCameraSettings() {
