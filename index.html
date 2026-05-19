@@ -134,7 +134,7 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
 <!-- SCANNER VIEW -->
 <div id="scanner-view">
   <header>
-    <h1>📦 EAN Scanner <span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:4px">v14</span></h1>
+    <h1>📦 EAN Scanner <span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:4px">v15</span></h1>
     <p id="header-status">Kamera wird gestartet…</p>
   </header>
 
@@ -234,9 +234,9 @@ let scanned = 0, notFound = 0, scanLog = [];
 let videoStream = null, videoTrack = null, torchOn = false, currentZoom = 1, zoomCaps = null;
 
 // ---- Scanner state ----
-let multiFormatReader = null;  // ZXing MultiFormatReader — synchronous
-let scanCanvas = null, scanCtx = null;
-let scanInterval = null, debugInterval = null;
+let codeReader   = null;   // ZXing BrowserMultiFormatReader
+let scanControls = null;   // IScannerControls returned by decodeFromConstraints
+let debugInterval = null;
 let scanLocked = false, lastScannedCode = null, lastScannedAt = 0;
 let scanAttempts = 0, scanHits = 0, lastDecodeErr = '';
 
@@ -267,14 +267,17 @@ function resetApp() {
   document.getElementById('api-key').value = '';
 }
 
-// ---- ZXing init ----
-function initZXing() {
+// ---- Camera + Scanner (ZXing manages both) ----
+async function startCamera() {
+  setStatus('Kamera wird gestartet…');
+
   const Z = window.ZXing;
   if (!Z || !Z.BrowserMultiFormatReader) {
     setStatus('Scanner nicht geladen');
     document.getElementById('cam-status').textContent = 'Seite neu laden (ZXing fehlt)';
-    return false;
+    return;
   }
+
   const hints = new Map();
   hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [
     Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8,
@@ -282,89 +285,48 @@ function initZXing() {
     Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.CODE_39, Z.BarcodeFormat.ITF,
   ]);
   hints.set(Z.DecodeHintType.TRY_HARDER, true);
-  // 100ms between internal retries — fast enough for continuous scanning
-  multiFormatReader = new Z.BrowserMultiFormatReader(hints, 100);
-  return true;
-}
-
-// ---- Camera ----
-async function startCamera() {
-  setStatus('Kamera wird gestartet…');
-  if (!initZXing()) return;
+  codeReader = new Z.BrowserMultiFormatReader(hints);
 
   const video = document.getElementById('video');
+
   try {
-    videoStream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
-    });
+    // decodeFromConstraints: ZXing opens camera + runs continuous decode loop.
+    // The callback fires on every frame — result is non-null when a barcode is found.
+    scanControls = await codeReader.decodeFromConstraints(
+      { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } },
+      video,
+      (result, err) => {
+        scanAttempts++;
+        if (result) { scanHits++; handleScan(result.getText()); }
+        if (err && !String(err).includes('NotFoundException')) {
+          lastDecodeErr = String(err.message || err).slice(0, 60);
+        }
+      }
+    );
   } catch (e) {
-    try { videoStream = await navigator.mediaDevices.getUserMedia({ video: true }); }
-    catch (e2) {
-      setStatus('Kein Kamerazugriff');
-      document.getElementById('cam-status').textContent = 'Kamera erlauben: ' + (e2.message || e2);
-      return;
-    }
+    setStatus('Kamera-Fehler');
+    document.getElementById('cam-status').textContent = e.message || String(e);
+    return;
   }
 
-  video.srcObject = videoStream;
-  try { await video.play(); } catch (_) {}
-
-  videoTrack = videoStream.getVideoTracks()[0];
+  // ZXing has set video.srcObject — grab the track for zoom/torch
+  videoStream = video.srcObject instanceof MediaStream ? video.srcObject : null;
+  videoTrack  = videoStream?.getVideoTracks()[0] || null;
   await applyOptimalCameraSettings();
   setupZoomUI();
   setupTorchUI();
-  startScanLoop();
+
   setStatus('Bereit zum Scannen');
+  debugInterval = setInterval(showDebug, 600);
 }
 
 function stopCamera() {
-  stopScanLoop();
-  multiFormatReader = null;
-  if (videoStream) { videoStream.getTracks().forEach(t => { try { t.stop(); } catch (_) {} }); videoStream = null; }
+  if (debugInterval) { clearInterval(debugInterval); debugInterval = null; }
+  if (scanControls)  { try { scanControls.stop(); } catch (_) {} scanControls = null; }
+  if (codeReader)    { try { codeReader.reset();  } catch (_) {} codeReader   = null; }
+  if (videoStream)   { videoStream.getTracks().forEach(t => { try { t.stop(); } catch (_) {} }); videoStream = null; }
   videoTrack = null; torchOn = false;
 }
-
-// ---- Scan loop ----
-// async while-loop: always exactly ONE decodeOnceFromVideoElement running.
-// No setInterval stacking — the next call only starts after the previous resolves/rejects.
-let scanActive = false;
-
-function startScanLoop() {
-  scanActive    = true;
-  debugInterval = setInterval(showDebug, 600);
-  runScanLoop();
-}
-
-function stopScanLoop() {
-  scanActive = false;
-  if (debugInterval) { clearInterval(debugInterval); debugInterval = null; }
-}
-
-async function runScanLoop() {
-  const video = document.getElementById('video');
-  while (scanActive) {
-    if (scanLocked || !multiFormatReader) {
-      await sleep(150);
-      continue;
-    }
-    scanAttempts++;
-    try {
-      // decodeOnceFromVideoElement: ZXing captures a frame internally and decodes it.
-      // Confirmed working on iOS Safari — this is the API that worked "at the beginning".
-      const result = await multiFormatReader.decodeOnceFromVideoElement(video);
-      scanHits++;
-      handleScan(result.getText());
-    } catch (e) {
-      const msg = String(e.message || e);
-      if (!msg.includes('NotFoundException')) {
-        lastDecodeErr = msg.slice(0, 60);
-      }
-    }
-  }
-}
-
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ---- Camera controls ----
 async function applyOptimalCameraSettings() {
