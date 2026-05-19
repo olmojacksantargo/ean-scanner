@@ -8,7 +8,6 @@
 <!--
   zxing-wasm@3.0.3 — IIFE-Bundle + WASM-Binary self-hosted im Repo.
   Same-Origin: kein CORS, kein Content-Type-Problem auf iOS Safari.
-  API: ZXingWASM.readBarcodes(imageData, options) → Promise<Result[]>
 -->
 <script src="./zxing_reader.js"></script>
 
@@ -28,11 +27,32 @@
     --text: #f0ede6; --muted: #9a9990;
     --green-light: #04342C; --red-light: #501313; --amber-light: #412402;
   }
+  .save-bar { background: rgba(26,26,24,0.94) !important; }
 }
-body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-header { background: var(--surface); border-bottom: 0.5px solid var(--border); padding: 16px 20px 12px; position: sticky; top: 0; z-index: 10; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  background: var(--bg); color: var(--text); min-height: 100vh;
+}
+body.has-save-bar { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
+
+/* Header */
+header {
+  background: var(--surface); border-bottom: 0.5px solid var(--border);
+  padding: 16px 20px 12px; position: sticky; top: 0; z-index: 10;
+}
+.header-top { display: flex; align-items: center; gap: 8px; }
 header h1 { font-size: 17px; font-weight: 600; }
-header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.version { font-size: 11px; font-weight: 400; color: var(--muted); }
+.badge {
+  background: var(--green); color: #fff; border-radius: 10px;
+  font-size: 11px; font-weight: 700; padding: 1px 7px; line-height: 18px;
+  min-width: 22px; text-align: center; transition: transform 0.15s ease;
+}
+.badge-pop { animation: badgePop 0.2s ease; }
+@keyframes badgePop { 0%,100% { transform:scale(1); } 50% { transform:scale(1.35); } }
+header p { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+/* Layout */
 .section { padding: 16px 16px 0; }
 .label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
 .card { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius); overflow: hidden; }
@@ -41,67 +61,102 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .card-row label { font-size: 14px; color: var(--muted); flex-shrink: 0; width: 80px; }
 .card-row input { flex: 1; background: transparent; border: none; outline: none; font-size: 14px; color: var(--text); font-family: inherit; -webkit-appearance: none; }
 
+/* Camera */
 #cam-wrapper { width: 100%; border-radius: var(--radius); overflow: hidden; background: #000; aspect-ratio: 3/4; position: relative; }
 #video { width: 100%; height: 100%; object-fit: cover; display: block; }
 #scan-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 2; }
 .scan-frame { width: 82%; height: 28%; position: relative; }
-.scan-frame::before, .scan-frame::after, .scan-frame span::before, .scan-frame span::after {
+.scan-frame::before,.scan-frame::after,.scan-frame span::before,.scan-frame span::after {
   content: ''; position: absolute; width: 30px; height: 30px; border-color: #fff; border-style: solid; transition: border-color 0.2s;
 }
-.scan-frame::before  { top: 0; left: 0;  border-width: 3px 0 0 3px; }
-.scan-frame::after   { top: 0; right: 0; border-width: 3px 3px 0 0; }
-.scan-frame span::before { bottom: 0; left: 0;  border-width: 0 0 3px 3px; }
-.scan-frame span::after  { bottom: 0; right: 0; border-width: 0 3px 3px 0; }
-.scan-frame.hit::before, .scan-frame.hit::after, .scan-frame.hit span::before, .scan-frame.hit span::after { border-color: var(--green); }
-.scan-line { position: absolute; left: 8px; right: 8px; height: 2px; background: rgba(29,158,117,0.9); box-shadow: 0 0 8px rgba(29,158,117,0.6); animation: scanline 1.4s ease-in-out infinite; }
-@keyframes scanline { 0%,100% { top: 5%; } 50% { top: 95%; } }
-.cam-controls { position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; z-index: 3; }
-.cam-btn { background: rgba(0,0,0,0.55); color: #fff; border: none; padding: 8px 12px; border-radius: 20px; font-size: 13px; font-weight: 600; cursor: pointer; backdrop-filter: blur(6px); -webkit-tap-highlight-color: transparent; }
-.cam-btn.active { background: var(--amber); }
-#zoom-controls { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; z-index: 3; }
-.zoom-btn { background: rgba(0,0,0,0.55); color: #fff; border: none; padding: 8px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; cursor: pointer; backdrop-filter: blur(6px); -webkit-tap-highlight-color: transparent; min-width: 48px; }
-.zoom-btn.active { background: #fff; color: #000; }
-#flash-overlay { position: absolute; inset: 0; background: var(--green); opacity: 0; pointer-events: none; z-index: 1; transition: opacity 0.2s; }
-#flash-overlay.flash { opacity: 0.4; }
+.scan-frame::before  { top:0;left:0;   border-width:3px 0 0 3px; }
+.scan-frame::after   { top:0;right:0;  border-width:3px 3px 0 0; }
+.scan-frame span::before { bottom:0;left:0;  border-width:0 0 3px 3px; }
+.scan-frame span::after  { bottom:0;right:0; border-width:0 3px 3px 0; }
+.scan-frame.hit::before,.scan-frame.hit::after,.scan-frame.hit span::before,.scan-frame.hit span::after { border-color:var(--green); }
+.scan-line { position:absolute;left:8px;right:8px;height:2px;background:rgba(29,158,117,0.9);box-shadow:0 0 8px rgba(29,158,117,0.6);animation:scanline 1.4s ease-in-out infinite; }
+@keyframes scanline { 0%,100%{top:5%} 50%{top:95%} }
+.cam-controls { position:absolute;top:8px;right:8px;display:flex;gap:6px;z-index:3; }
+.cam-btn { background:rgba(0,0,0,0.55);color:#fff;border:none;padding:8px 12px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;backdrop-filter:blur(6px);-webkit-tap-highlight-color:transparent; }
+.cam-btn.active { background:var(--amber); }
+#zoom-controls { position:absolute;bottom:12px;left:50%;transform:translateX(-50%);display:flex;gap:6px;z-index:3; }
+.zoom-btn { background:rgba(0,0,0,0.55);color:#fff;border:none;padding:8px 14px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;backdrop-filter:blur(6px);-webkit-tap-highlight-color:transparent;min-width:48px; }
+.zoom-btn.active { background:#fff;color:#000; }
+#flash-overlay { position:absolute;inset:0;background:var(--green);opacity:0;pointer-events:none;z-index:1;transition:opacity 0.15s; }
+#flash-overlay.flash { opacity:0.4; }
+.cam-status { text-align:center;font-size:13px;color:var(--muted);padding:12px 0 0; }
+.debug { font-size:10px;color:var(--muted);text-align:center;padding-top:4px;font-family:ui-monospace,monospace; }
 
-.btn { width: 100%; padding: 15px; border: none; border-radius: var(--radius); font-size: 16px; font-weight: 600; cursor: pointer; transition: opacity 0.15s; -webkit-tap-highlight-color: transparent; }
-.btn:active { opacity: 0.75; }
-.btn-primary   { background: var(--green); color: #fff; }
-.btn-secondary { background: var(--surface); border: 0.5px solid var(--border); color: var(--text); }
-.result-card { border-radius: var(--radius); padding: 14px 16px; display: none; }
-.result-card.success { background: var(--green-light); border: 0.5px solid var(--green); }
-.result-card.error   { background: var(--red-light);   border: 0.5px solid var(--red); }
-.result-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
-.result-card.success .result-title { color: var(--green); }
-.result-card.error   .result-title { color: var(--red); }
-.result-detail { font-size: 13px; color: var(--text); line-height: 1.6; }
-.result-badge { display: inline-block; background: rgba(29,158,117,0.15); color: var(--green); border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: 600; margin-right: 4px; }
-.counter { background: var(--amber-light); border: 0.5px solid var(--amber); border-radius: var(--radius); padding: 12px 16px; display: none; justify-content: space-between; align-items: center; }
-.counter-num   { font-size: 28px; font-weight: 700; color: var(--amber); }
-.counter-label { font-size: 12px; color: var(--muted); }
-.log-row { display: grid; grid-template-columns: 56px 1fr 24px; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 0.5px solid var(--border); font-size: 13px; }
-.log-row:last-child { border-bottom: none; }
-.log-time { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); white-space: pre-line; line-height: 1.3; }
-.log-body { min-width: 0; }
-.log-desc { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.log-ean  { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); margin-top: 1px; }
-.log-status { font-size: 16px; text-align: center; line-height: 1; }
-.log-status.saved    { color: var(--green); }
-.log-status.notfound { color: var(--red); }
-.log-status.error    { color: var(--amber); }
-.log-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.log-actions { display: flex; gap: 8px; }
-.log-action-btn { background: none; border: none; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; cursor: pointer; padding: 4px 6px; -webkit-tap-highlight-color: transparent; }
-.log-action-btn:active { opacity: 0.5; }
-.log-empty { padding: 24px 16px; text-align: center; color: var(--muted); font-size: 13px; }
-.spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle; margin-right: 6px; }
-@keyframes spin { to { transform: rotate(360deg); } }
-#scanner-view { display: none; }
-.spacer    { height: 16px; }
-.spacer-sm { height: 10px; }
-.pb        { padding-bottom: 48px; }
-.cam-status { text-align: center; font-size: 13px; color: var(--muted); padding: 12px 0 0; }
-.debug      { font-size: 10px; color: var(--muted); text-align: center; padding-top: 4px; font-family: ui-monospace, monospace; }
+/* Pending list (batch queue) */
+.pending-row { position:relative;overflow:hidden; }
+.pending-row + .pending-row .pending-inner { border-top:0.5px solid var(--border); }
+.pending-inner {
+  background:var(--surface);display:flex;align-items:center;padding:12px 16px;gap:12px;
+  position:relative;z-index:1;-webkit-user-select:none;user-select:none;will-change:transform;
+}
+.pending-delete-btn {
+  position:absolute;right:0;top:0;bottom:0;width:80px;background:var(--red);color:#fff;
+  border:none;font-size:13px;font-weight:600;cursor:pointer;z-index:0;
+  -webkit-tap-highlight-color:transparent;
+  display:flex;align-items:center;justify-content:center;
+}
+.pending-icon {
+  width:32px;height:32px;border-radius:9px;background:var(--green-light);color:var(--green);
+  display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;flex-shrink:0;
+}
+.pending-body { flex:1;min-width:0; }
+.pending-name { font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.pending-meta { font-size:11px;color:var(--muted);font-family:ui-monospace,monospace;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.pending-time { font-size:11px;color:var(--muted);flex-shrink:0;white-space:nowrap; }
+@keyframes pendingIn { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
+.pending-row-new .pending-inner { animation:pendingIn 0.22s ease; }
+
+/* Counters */
+.counter { background:var(--amber-light);border:0.5px solid var(--amber);border-radius:var(--radius);padding:12px 16px;display:none;justify-content:space-between;align-items:center; }
+.counter-num   { font-size:28px;font-weight:700;color:var(--amber); }
+.counter-label { font-size:12px;color:var(--muted); }
+
+/* Log */
+.log-row { display:grid;grid-template-columns:56px 1fr 24px;align-items:center;gap:10px;padding:10px 14px;border-bottom:0.5px solid var(--border);font-size:13px; }
+.log-row:last-child { border-bottom:none; }
+.log-time { font-family:ui-monospace,monospace;font-size:11px;color:var(--muted);white-space:pre-line;line-height:1.3; }
+.log-body { min-width:0; }
+.log-desc { font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.log-ean  { font-family:ui-monospace,monospace;font-size:11px;color:var(--muted);margin-top:1px; }
+.log-status { font-size:16px;text-align:center;line-height:1; }
+.log-status.saved    { color:var(--green); }
+.log-status.notfound { color:var(--red); }
+.log-status.error    { color:var(--amber); }
+.log-header { display:flex;justify-content:space-between;align-items:center;margin-bottom:8px; }
+.log-actions { display:flex;gap:8px; }
+.log-action-btn { background:none;border:none;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600;cursor:pointer;padding:4px 6px;-webkit-tap-highlight-color:transparent; }
+.log-action-btn:active { opacity:0.5; }
+.log-empty { padding:24px 16px;text-align:center;color:var(--muted);font-size:13px; }
+
+/* Buttons */
+.btn { width:100%;padding:15px;border:none;border-radius:var(--radius);font-size:16px;font-weight:600;cursor:pointer;transition:opacity 0.15s;-webkit-tap-highlight-color:transparent; }
+.btn:active { opacity:0.75; }
+.btn-primary   { background:var(--green);color:#fff; }
+.btn-secondary { background:var(--surface);border:0.5px solid var(--border);color:var(--text); }
+.spinner { display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:6px; }
+@keyframes spin { to{transform:rotate(360deg)} }
+
+/* Sticky save bar */
+.save-bar {
+  position:fixed;bottom:0;left:0;right:0;z-index:20;
+  background:rgba(247,246,243,0.94);
+  border-top:0.5px solid var(--border);
+  padding:10px 16px;
+  padding-bottom:calc(10px + env(safe-area-inset-bottom, 0px));
+  backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);
+}
+
+/* Misc */
+#scanner-view { display:none; }
+.spacer    { height:16px; }
+.spacer-sm { height:10px; }
+.pb        { padding-bottom:48px; }
 </style>
 </head>
 <body>
@@ -118,7 +173,7 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
     <div class="card">
       <div class="card-row">
         <label>API Key</label>
-        <input type="password" id="api-key" placeholder="pat..." autocomplete="off" spellcheck="false">
+        <input type="password" id="api-key" placeholder="pat…" autocomplete="off" spellcheck="false">
       </div>
     </div>
     <div class="spacer-sm"></div>
@@ -134,10 +189,14 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
 <!-- SCANNER VIEW -->
 <div id="scanner-view">
   <header>
-    <h1>📦 EAN Scanner <span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:4px">v16</span></h1>
+    <div class="header-top">
+      <h1>📦 EAN Scanner <span class="version">v17</span></h1>
+      <span id="pending-badge" class="badge" style="display:none">0</span>
+    </div>
     <p id="header-status">Kamera wird gestartet…</p>
   </header>
 
+  <!-- Camera -->
   <div class="section">
     <div class="spacer"></div>
     <div id="cam-wrapper">
@@ -159,33 +218,35 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
     <p class="debug" id="debug-info"></p>
   </div>
 
-  <div class="section"><div class="spacer"></div>
-    <div class="result-card" id="result-card">
-      <div class="result-title" id="result-title"></div>
-      <div class="result-detail" id="result-detail"></div>
-    </div>
-  </div>
-
-  <div class="section" id="save-section" style="display:none">
+  <!-- Pending batch list -->
+  <div class="section" id="pending-section" style="display:none">
     <div class="spacer"></div>
-    <button class="btn btn-primary" id="save-btn" onclick="saveRecord()">✓ In Airtable speichern</button>
+    <div class="log-header">
+      <div class="label" style="margin-bottom:0">Bereit zum Speichern <span id="pending-count-label" style="opacity:.7"></span></div>
+      <div class="log-actions">
+        <button class="log-action-btn" onclick="clearPending()">Alle entfernen</button>
+      </div>
+    </div>
     <div class="spacer-sm"></div>
-    <button class="btn btn-secondary" onclick="cancelSave()">Abbrechen</button>
+    <div class="card" id="pending-list"></div>
   </div>
 
-  <div class="section"><div class="spacer"></div>
+  <!-- Manual input -->
+  <div class="section">
+    <div class="spacer"></div>
     <div class="label">Manuell eingeben</div>
     <div class="card">
       <div class="card-row">
         <label>EAN</label>
         <input type="text" id="ean-input" placeholder="4001234567890" inputmode="numeric"
-          onkeydown="if(event.key==='Enter') manualLookup()">
+          onkeydown="if(event.key==='Enter') manualAdd()">
       </div>
     </div>
     <div class="spacer-sm"></div>
-    <button class="btn btn-secondary" onclick="manualLookup()">EAN suchen</button>
+    <button class="btn btn-secondary" onclick="manualAdd()">EAN hinzufügen</button>
   </div>
 
+  <!-- Counters -->
   <div class="section"><div class="spacer"></div>
     <div class="counter" id="counter">
       <div><div class="counter-num" id="counter-num">0</div><div class="counter-label">Gespeichert</div></div>
@@ -193,10 +254,11 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
     </div>
   </div>
 
+  <!-- Save log -->
   <div class="section">
     <div class="spacer"></div>
     <div class="log-header">
-      <div class="label" style="margin-bottom:0">Scan-Log <span id="log-count" style="opacity:0.7"></span></div>
+      <div class="label" style="margin-bottom:0">Scan-Log <span id="log-count" style="opacity:.7"></span></div>
       <div class="log-actions">
         <button class="log-action-btn" onclick="exportLogCSV()">Export</button>
         <button class="log-action-btn" onclick="clearLog()">Leeren</button>
@@ -208,6 +270,13 @@ header p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
   <div class="section pb"><div class="spacer"></div>
     <button class="btn btn-secondary" onclick="resetApp()">⚙ API Key ändern</button>
   </div>
+</div>
+
+<!-- Sticky save bar (appears when items are pending) -->
+<div class="save-bar" id="save-bar" style="display:none">
+  <button class="btn btn-primary" id="batch-save-btn" onclick="batchSave()">
+    <span id="batch-save-label">Speichern</span>
+  </button>
 </div>
 
 <script>
@@ -226,17 +295,17 @@ const INV_LINK   = 'fldP8NRGf9YdFidSU';
 const INV_DATUM  = 'fldS7qcrpUwURvXN5';
 const LOG_KEY    = 'ean_scan_log_v1';
 
-// ---- App state ----
-let apiKey = '', matchedRecordId = null, matchedEAN = null, matchedDesc = '';
-let scanned = 0, notFound = 0, scanLog = [];
-
-// ---- WASM setup — must run before any readBarcodes call ----
+// ---- WASM setup (before any readBarcodes call) ----
 const WASM_URL = new URL('./zxing_reader.wasm', window.location.href).href;
 if (window.ZXingWASM) {
   ZXingWASM.setZXingModuleOverrides({
     locateFile: (path) => path.endsWith('.wasm') ? WASM_URL : path
   });
 }
+
+// ---- App state ----
+let apiKey = '', scanned = 0, notFound = 0, scanLog = [];
+let pendingItems = []; // { id, ean, desc, recordId, sku, color, size, ts }
 
 // ---- Camera state ----
 let videoStream = null, videoTrack = null, torchOn = false, currentZoom = 1, zoomCaps = null;
@@ -248,11 +317,30 @@ let scanCanvas = null, scanCtx = null;
 let scanLocked = false, lastScannedCode = null, lastScannedAt = 0;
 let scanAttempts = 0, scanHits = 0, lastDecodeErr = '';
 
+// ---- Audio ----
+let audioCtx = null;
+function playBeep(freq = 880, ms = 80, vol = 0.3) {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.type = 'square';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + ms / 1000);
+    osc.start(audioCtx.currentTime);
+    osc.stop(audioCtx.currentTime + ms / 1000 + 0.02);
+  } catch (_) {}
+}
+
 // ---- Boot ----
 window.addEventListener('DOMContentLoaded', () => {
   loadLog(); renderLog();
   const saved = localStorage.getItem('airtable_api_key');
   if (saved) { apiKey = saved; showScannerView(); }
+  initPendingSwipe();
 });
 
 function startApp() {
@@ -275,14 +363,13 @@ function resetApp() {
   document.getElementById('api-key').value = '';
 }
 
-// ---- Camera + Scanner (zxing-wasm self-hosted) ----
+// ---- Camera + Scanner (zxing-wasm, same-origin WASM) ----
 async function startCamera() {
   if (!window.ZXingWASM) {
     setStatus('Scanner nicht geladen');
     document.getElementById('cam-status').textContent = 'Seite neu laden (zxing_reader.js fehlt)';
     return;
   }
-
   setStatus('WASM wird initialisiert…');
   try {
     await ZXingWASM.getZXingModule({
@@ -290,10 +377,9 @@ async function startCamera() {
     });
   } catch (e) {
     setStatus('WASM-Fehler');
-    document.getElementById('cam-status').textContent = (e.message || String(e)).slice(0, 120);
+    document.getElementById('cam-status').textContent = (e.message || String(e)).slice(0, 100);
     return;
   }
-
   setStatus('Kamera wird gestartet…');
   try {
     videoStream = await navigator.mediaDevices.getUserMedia({
@@ -304,20 +390,15 @@ async function startCamera() {
     document.getElementById('cam-status').textContent = e.message || String(e);
     return;
   }
-
   const video = document.getElementById('video');
   video.srcObject = videoStream;
   await new Promise(res => { video.onloadedmetadata = res; });
   await video.play().catch(() => {});
   videoTrack = videoStream.getVideoTracks()[0] || null;
-
   scanCanvas = document.createElement('canvas');
   scanCtx = scanCanvas.getContext('2d', { willReadFrequently: true });
-
   await applyOptimalCameraSettings();
-  setupZoomUI();
-  setupTorchUI();
-
+  setupZoomUI(); setupTorchUI();
   scanning = true;
   setStatus('Bereit zum Scannen');
   scanLoop();
@@ -326,36 +407,23 @@ async function startCamera() {
 
 async function scanLoop() {
   if (!scanning) return;
-
   const video = document.getElementById('video');
   if (!isDecoding && video.readyState >= 2 && video.videoWidth > 0) {
     isDecoding = true;
     scanAttempts++;
-
     if (scanCanvas.width  !== video.videoWidth)  scanCanvas.width  = video.videoWidth;
     if (scanCanvas.height !== video.videoHeight) scanCanvas.height = video.videoHeight;
     scanCtx.drawImage(video, 0, 0);
-
     try {
       const imageData = scanCtx.getImageData(0, 0, scanCanvas.width, scanCanvas.height);
       const results = await ZXingWASM.readBarcodes(imageData, {
-        tryHarder: true,
-        tryRotate: false,
-        tryInvert: false,
-        tryDownscale: true,
-        maxNumberOfSymbols: 1,
+        tryHarder: true, tryRotate: false, tryInvert: false,
+        tryDownscale: true, maxNumberOfSymbols: 1,
       });
-      if (results.length > 0 && results[0].text) {
-        scanHits++;
-        handleScan(results[0].text);
-      }
-    } catch (e) {
-      lastDecodeErr = String(e.message || e).slice(0, 60);
-    }
-
+      if (results.length > 0 && results[0].text) { scanHits++; handleScan(results[0].text); }
+    } catch (e) { lastDecodeErr = String(e.message || e).slice(0, 60); }
     isDecoding = false;
   }
-
   if (scanning) frameTimer = setTimeout(scanLoop, 80);
 }
 
@@ -364,8 +432,7 @@ function stopCamera() {
   if (debugInterval) { clearInterval(debugInterval); debugInterval = null; }
   if (frameTimer)    { clearTimeout(frameTimer); frameTimer = null; }
   if (videoStream)   { videoStream.getTracks().forEach(t => { try { t.stop(); } catch (_) {} }); videoStream = null; }
-  videoTrack = null; torchOn = false;
-  scanCanvas = null; scanCtx = null; isDecoding = false;
+  videoTrack = null; torchOn = false; scanCanvas = null; scanCtx = null; isDecoding = false;
 }
 
 // ---- Camera controls ----
@@ -421,113 +488,288 @@ function showDebug() {
     (lastDecodeErr ? ' · ⚠ ' + lastDecodeErr : '');
 }
 
-// ---- Scan handling ----
-function handleScan(code) {
-  const now = Date.now();
-  if (scanLocked) return;
-  if (code === lastScannedCode && (now - lastScannedAt) < 2000) return;
-  lastScannedCode = code; lastScannedAt = now; scanLocked = true;
+// ---- Scan feedback ----
+let camStatusTimer = null;
+function showCamStatus(msg, duration = 2000) {
+  document.getElementById('cam-status').textContent = msg;
+  if (camStatusTimer) clearTimeout(camStatusTimer);
+  if (duration > 0) camStatusTimer = setTimeout(() => {
+    document.getElementById('cam-status').textContent = 'Barcode in den Rahmen halten';
+  }, duration);
+}
+
+function flashFrame() {
   const flash = document.getElementById('flash-overlay');
   const frame = document.getElementById('scan-frame');
   flash.classList.add('flash'); frame.classList.add('hit');
   setTimeout(() => { flash.classList.remove('flash'); frame.classList.remove('hit'); }, 250);
-  vibrate(60);
-  document.getElementById('ean-input').value = code;
-  lookupEAN(code);
 }
-function manualLookup() {
+
+// ---- Scan handling ----
+async function handleScan(code) {
+  const now = Date.now();
+  if (scanLocked) return;
+  if (code === lastScannedCode && (now - lastScannedAt) < 2000) return;
+  lastScannedCode = code; lastScannedAt = now; scanLocked = true;
+
+  // Immediate feedback (before network)
+  flashFrame();
+  vibrate(40);
+  playBeep(880, 55, 0.22);
+
+  try {
+    const result = await lookupEAN(code);
+    if (result.found) {
+      pendingItems.unshift({
+        id: Date.now(), ean: code,
+        desc: result.desc, recordId: result.recordId,
+        sku: result.sku, color: result.color, size: result.size,
+        ts: Date.now()
+      });
+      renderPending(true);
+      showCamStatus(`✓ ${result.desc || code}`, 1400);
+      playBeep(1200, 60, 0.18);   // confirmation tone
+      vibrate([25, 15, 55]);       // double-tap feel
+    } else {
+      notFound++;
+      addLogEntry({ ean: code, desc: '(nicht gefunden)', status: 'notfound' });
+      updateCounter();
+      showCamStatus(`✗ Nicht in Airtable: ${code}`, 2200);
+      playBeep(330, 140, 0.18);   // low error tone
+      vibrate([80, 40, 80]);       // error pattern
+    }
+  } catch (e) {
+    showCamStatus(`⚠ ${e.message}`, 2500);
+  }
+
+  setTimeout(() => { scanLocked = false; }, 1300);
+}
+
+async function manualAdd() {
   const ean = document.getElementById('ean-input').value.trim();
   if (!ean) return;
-  scanLocked = true; lookupEAN(ean);
-}
-function cancelSave() {
-  matchedRecordId = null; matchedEAN = null;
-  document.getElementById('save-section').style.display = 'none';
-  showResult(null);
   document.getElementById('ean-input').value = '';
-  scanLocked = false; lastScannedCode = null;
-  setStatus('Bereit zum Scannen');
-}
-
-// ---- Airtable lookup ----
-async function lookupEAN(ean) {
-  setStatus('Suche…'); showResult(null);
-  document.getElementById('save-section').style.display = 'none';
-  matchedRecordId = null; matchedEAN = null;
+  setStatus('Suche…');
   try {
-    const formula = encodeURIComponent(`{EAN}="${ean}"`);
-    const fields  = [EAN_FLD,EAN_SKU,EAN_COLOR,EAN_SIZE,EAN_LOT,EAN_DESC].map(f=>`fields[]=${f}`).join('&');
-    const res = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${EAN_TBL}?filterByFormula=${formula}&${fields}&maxRecords=1`,
-      { headers: { Authorization: `Bearer ${apiKey}` } });
-    if (!res.ok) {
-      if (res.status === 401) throw new Error('API Key ungültig – bitte unter ⚙ neu eingeben');
-      throw new Error((await res.json().catch(()=>({}))).error?.message || `API-Fehler ${res.status}`);
+    const result = await lookupEAN(ean);
+    if (result.found) {
+      pendingItems.unshift({
+        id: Date.now(), ean,
+        desc: result.desc, recordId: result.recordId,
+        sku: result.sku, color: result.color, size: result.size,
+        ts: Date.now()
+      });
+      renderPending(true);
+      setStatus('Bereit zum Scannen');
+      playBeep(1200, 60, 0.18);
+    } else {
+      notFound++;
+      addLogEntry({ ean, desc: '(nicht gefunden)', status: 'notfound' });
+      updateCounter();
+      alert(`EAN "${ean}" nicht in Airtable gefunden.`);
+      setStatus('Bereit zum Scannen');
     }
-    const data = await res.json();
-    if (!data.records?.length) {
-      notFound++; updateCounter();
-      addLogEntry({ ean, desc: '(nicht in Airtable)', status: 'notfound' });
-      showResult({ ok: false, message: `EAN "${ean}" nicht gefunden.` });
-      setStatus('Nicht gefunden'); scanLocked = false; return;
-    }
-    const rec = data.records[0], f = rec.fields;
-    const sku   = f[EAN_SKU]  || '–';
-    const color = Array.isArray(f[EAN_COLOR]) ? f[EAN_COLOR].join(', ') : (f[EAN_COLOR] || '–');
-    const size  = f[EAN_SIZE] ? (typeof f[EAN_SIZE]==='object' ? f[EAN_SIZE].name : f[EAN_SIZE]) : '–';
-    const lot   = Array.isArray(f[EAN_LOT])  ? f[EAN_LOT].join(', ')  : (f[EAN_LOT]  || '–');
-    const desc  = Array.isArray(f[EAN_DESC]) ? f[EAN_DESC].join(', ') : (f[EAN_DESC] || lot);
-    matchedRecordId = rec.id; matchedEAN = ean; matchedDesc = desc;
-    showResult({ ok: true, sku, color, size, desc });
-    document.getElementById('save-section').style.display = 'block';
-    setStatus('Gefunden – bitte speichern');
   } catch (e) {
-    showResult({ ok: false, message: e.message }); setStatus('Fehler'); scanLocked = false;
-  }
-}
-function showResult(data) {
-  const card = document.getElementById('result-card');
-  const title = document.getElementById('result-title');
-  const detail = document.getElementById('result-detail');
-  if (!data) { card.style.display = 'none'; card.className = 'result-card'; return; }
-  card.style.display = 'block';
-  if (!data.ok) {
-    card.className = 'result-card error'; title.textContent = '❌ Nicht gefunden'; detail.textContent = data.message;
-  } else {
-    card.className = 'result-card success'; title.textContent = data.desc;
-    detail.innerHTML = `<span class="result-badge">${data.size}</span><span class="result-badge">${data.color}</span><span style="color:var(--muted)">SKU: ${data.sku}</span>`;
+    alert('Fehler: ' + e.message);
+    setStatus('Bereit zum Scannen');
   }
 }
 
-// ---- Airtable save ----
-async function saveRecord() {
-  if (!matchedRecordId) return;
-  const recId = String(matchedRecordId);
-  if (!recId.startsWith('rec')) { alert('Ungültige Record ID: ' + recId); return; }
-  const btn = document.getElementById('save-btn');
-  btn.innerHTML = '<span class="spinner"></span>Speichern…'; btn.disabled = true;
-  try {
-    const res = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${INV_TBL}`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields: {
-        [INV_EAN_BC]: { text: String(matchedEAN) },
-        [INV_LINK]:   [recId],
-        [INV_DATUM]:  new Date().toISOString().split('T')[0],
-      }}),
-    });
-    if (!res.ok) throw new Error((await res.json()).error?.message || `Speicherfehler ${res.status}`);
-    scanned++; updateCounter();
-    addLogEntry({ ean: matchedEAN, desc: matchedDesc, status: 'saved' });
-    vibrate([50,30,50]);
-    document.getElementById('save-section').style.display = 'none';
-    document.getElementById('ean-input').value = '';
-    showResult(null);
-    setStatus(`✓ Gespeichert (${scanned} gesamt)`);
-    setTimeout(() => setStatus('Bereit zum Scannen'), 1500);
-    matchedRecordId = null; matchedEAN = null;
-  } catch (e) { alert('Fehler beim Speichern: ' + e.message); }
-  btn.innerHTML = '✓ In Airtable speichern'; btn.disabled = false;
-  scanLocked = false; lastScannedCode = null; lastScannedAt = 0;
+// ---- Airtable lookup (returns data, no UI side-effects) ----
+async function lookupEAN(ean) {
+  const formula = encodeURIComponent(`{EAN}="${ean}"`);
+  const fields  = [EAN_FLD,EAN_SKU,EAN_COLOR,EAN_SIZE,EAN_LOT,EAN_DESC].map(f=>`fields[]=${f}`).join('&');
+  const res = await fetch(
+    `https://api.airtable.com/v0/${BASE_ID}/${EAN_TBL}?filterByFormula=${formula}&${fields}&maxRecords=1`,
+    { headers: { Authorization: `Bearer ${apiKey}` } }
+  );
+  if (!res.ok) {
+    if (res.status === 401) throw new Error('API Key ungültig — bitte unter ⚙ neu eingeben');
+    throw new Error((await res.json().catch(()=>({}))).error?.message || `API-Fehler ${res.status}`);
+  }
+  const data = await res.json();
+  if (!data.records?.length) return { found: false };
+  const rec = data.records[0], f = rec.fields;
+  const sku   = f[EAN_SKU]  || '–';
+  const color = Array.isArray(f[EAN_COLOR]) ? f[EAN_COLOR].join(', ') : (f[EAN_COLOR] || '–');
+  const size  = f[EAN_SIZE] ? (typeof f[EAN_SIZE]==='object' ? f[EAN_SIZE].name : f[EAN_SIZE]) : '–';
+  const lot   = Array.isArray(f[EAN_LOT])  ? f[EAN_LOT].join(', ')  : (f[EAN_LOT]  || '–');
+  const desc  = Array.isArray(f[EAN_DESC]) ? f[EAN_DESC].join(', ') : (f[EAN_DESC] || lot);
+  return { found: true, recordId: rec.id, sku, color, size, desc };
+}
+
+// ---- Pending batch UI ----
+function renderPending(isNew = false) {
+  const section  = document.getElementById('pending-section');
+  const list     = document.getElementById('pending-list');
+  const bar      = document.getElementById('save-bar');
+  const badge    = document.getElementById('pending-badge');
+  const countLbl = document.getElementById('pending-count-label');
+  const saveBtn  = document.getElementById('batch-save-btn');
+
+  if (!pendingItems.length) {
+    section.style.display = 'none';
+    bar.style.display = 'none';
+    badge.style.display = 'none';
+    document.body.classList.remove('has-save-bar');
+    return;
+  }
+
+  section.style.display = 'block';
+  bar.style.display = 'block';
+  document.body.classList.add('has-save-bar');
+  const n = pendingItems.length;
+  badge.textContent = n;
+  badge.style.display = 'inline-block';
+  if (isNew) { badge.classList.remove('badge-pop'); void badge.offsetWidth; badge.classList.add('badge-pop'); }
+  countLbl.textContent = `(${n})`;
+  document.getElementById('batch-save-label').textContent = `${n} Artikel in Airtable speichern`;
+
+  list.innerHTML = pendingItems.map((item, i) => `
+    <div class="pending-row${isNew && i === 0 ? ' pending-row-new' : ''}" data-idx="${i}">
+      <div class="pending-inner">
+        <div class="pending-icon">✓</div>
+        <div class="pending-body">
+          <div class="pending-name">${escapeHtml(item.desc || item.ean)}</div>
+          <div class="pending-meta">${escapeHtml(item.ean)}${item.size !== '–' ? ' · '+escapeHtml(item.size) : ''}${item.color !== '–' ? ' · '+escapeHtml(item.color) : ''}</div>
+        </div>
+        <div class="pending-time">${formatTime(item.ts)}</div>
+      </div>
+      <button class="pending-delete-btn" onclick="removePending(${i})">Löschen</button>
+    </div>
+  `).join('');
+}
+
+function removePending(idx) {
+  pendingItems.splice(idx, 1);
+  closeAllPendingSwipes();
+  renderPending();
+}
+
+function clearPending() {
+  if (!pendingItems.length) return;
+  if (!confirm(`Alle ${pendingItems.length} Einträge entfernen?`)) return;
+  pendingItems = [];
+  renderPending();
+}
+
+// ---- Batch save to Airtable ----
+async function batchSave() {
+  if (!pendingItems.length) return;
+  const btn   = document.getElementById('batch-save-btn');
+  const label = document.getElementById('batch-save-label');
+  btn.disabled = true;
+
+  const batch = [...pendingItems]; // snapshot — new scans go to fresh array
+  pendingItems = [];
+  renderPending();
+
+  const total = batch.length;
+  let saved = 0, failed = 0;
+  const today = new Date().toISOString().split('T')[0];
+
+  for (let i = 0; i < batch.length; i++) {
+    setStatus(`Speichere ${i+1} / ${total}…`);
+    const item = batch[i];
+    try {
+      const res = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${INV_TBL}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: {
+          [INV_EAN_BC]: { text: String(item.ean) },
+          [INV_LINK]:   [item.recordId],
+          [INV_DATUM]:  today,
+        }}),
+      });
+      if (!res.ok) throw new Error((await res.json()).error?.message || `Fehler ${res.status}`);
+      addLogEntry({ ean: item.ean, desc: item.desc, status: 'saved' });
+      scanned++; saved++;
+    } catch (e) {
+      addLogEntry({ ean: item.ean, desc: `${item.desc} ⚠`, status: 'error' });
+      failed++;
+    }
+  }
+
+  btn.disabled = false;
+  updateCounter();
+  renderPending(); // show fresh pending items scanned during save
+
+  if (failed === 0) {
+    setStatus(`✓ ${saved} Artikel gespeichert`);
+    playBeep(880, 70, 0.22);
+    setTimeout(() => playBeep(1200, 90, 0.18), 85);
+    vibrate([40, 20, 40, 20, 70]);
+  } else {
+    setStatus(`${saved} gespeichert · ${failed} Fehler`);
+    playBeep(660, 90, 0.2);
+    vibrate([80, 40, 80]);
+  }
+  setTimeout(() => setStatus('Bereit zum Scannen'), 2500);
+}
+
+// ---- Swipe-to-delete (iOS style) ----
+let swipe = null;
+
+function initPendingSwipe() {
+  const list = document.getElementById('pending-list');
+
+  list.addEventListener('touchstart', e => {
+    const row = e.target.closest('.pending-row');
+    if (!row || e.target.closest('.pending-delete-btn')) return;
+    closeAllPendingSwipes(row);
+    swipe = {
+      inner: row.querySelector('.pending-inner'),
+      x0: e.touches[0].clientX,
+      y0: e.touches[0].clientY,
+      startX: getTranslateX(row.querySelector('.pending-inner')),
+      axis: null,
+    };
+  }, { passive: true });
+
+  list.addEventListener('touchmove', e => {
+    if (!swipe) return;
+    const dx = e.touches[0].clientX - swipe.x0;
+    const dy = e.touches[0].clientY - swipe.y0;
+    if (!swipe.axis) {
+      if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+      swipe.axis = Math.abs(dx) >= Math.abs(dy) ? 'h' : 'v';
+    }
+    if (swipe.axis === 'v') { swipe = null; return; }
+    e.preventDefault();
+    const x = Math.max(-80, Math.min(0, swipe.startX + dx));
+    swipe.inner.style.transition = 'none';
+    swipe.inner.style.transform = `translateX(${x}px)`;
+  }, { passive: false });
+
+  list.addEventListener('touchend', () => {
+    if (!swipe || swipe.axis !== 'h') { swipe = null; return; }
+    const cur = getTranslateX(swipe.inner);
+    swipe.inner.style.transition = 'transform 0.25s ease';
+    swipe.inner.style.transform = cur < -40 ? 'translateX(-80px)' : 'translateX(0)';
+    swipe = null;
+  }, { passive: true });
+
+  list.addEventListener('touchcancel', () => {
+    if (swipe?.inner) { swipe.inner.style.transition = 'transform 0.25s ease'; swipe.inner.style.transform = 'translateX(0)'; }
+    swipe = null;
+  }, { passive: true });
+
+  document.addEventListener('touchstart', e => {
+    if (!e.target.closest('#pending-list')) closeAllPendingSwipes();
+  }, { passive: true });
+}
+
+function getTranslateX(el) {
+  const m = (el.style.transform || '').match(/translateX\((-?[\d.]+)px\)/);
+  return m ? parseFloat(m[1]) : 0;
+}
+
+function closeAllPendingSwipes(exceptRow) {
+  document.querySelectorAll('#pending-list .pending-inner').forEach(inner => {
+    if (exceptRow && inner.closest('.pending-row') === exceptRow) return;
+    inner.style.transition = 'transform 0.25s ease';
+    inner.style.transform = 'translateX(0)';
+  });
 }
 
 // ---- Scan log ----
@@ -562,15 +804,6 @@ function onLogTap(ts) {
   const e = scanLog.find(x => x.ts === ts); if (!e) return;
   if (confirm(`${e.desc||e.ean}\n${e.ean}\n${new Date(e.ts).toLocaleString('de-DE')}\n\nEintrag löschen?`)) deleteLogEntry(ts);
 }
-function formatTime(ts) {
-  const d = new Date(ts), t = new Date();
-  const hh = String(d.getHours()).padStart(2,'0'), mm = String(d.getMinutes()).padStart(2,'0');
-  if (d.toDateString()===t.toDateString()) return `${hh}:${mm}`;
-  return `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}\n${hh}:${mm}`;
-}
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
 function exportLogCSV() {
   if (!scanLog.length) { alert('Log ist leer.'); return; }
   const rows = [['Datum','Uhrzeit','EAN','Beschreibung','Status']];
@@ -589,6 +822,15 @@ function updateCounter() {
 }
 function setStatus(msg) { document.getElementById('header-status').textContent = msg; }
 function vibrate(p) { if (navigator.vibrate) navigator.vibrate(p); }
+function formatTime(ts) {
+  const d = new Date(ts), t = new Date();
+  const hh = String(d.getHours()).padStart(2,'0'), mm = String(d.getMinutes()).padStart(2,'0');
+  if (d.toDateString()===t.toDateString()) return `${hh}:${mm}`;
+  return `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}\n${hh}:${mm}`;
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 </script>
 </body>
 </html>
