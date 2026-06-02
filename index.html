@@ -196,7 +196,7 @@ header p { font-size: 12px; color: var(--muted); margin-top: 3px; }
 <div id="scanner-view">
   <header>
     <div class="header-top">
-      <h1>📦 Wareneingang <span class="version">v18</span></h1>
+      <h1>📦 Wareneingang <span class="version">v18.1</span></h1>
       <span id="pending-badge" class="badge" style="display:none">0</span>
       <button class="cam-btn" id="refresh-btn" onclick="loadPlaceholders()"
         style="margin-left:auto;background:var(--surface);color:var(--muted);border:0.5px solid var(--border)">↻ Liste</button>
@@ -390,7 +390,8 @@ async function loadPlaceholders() {
   try {
     do {
       const url = `https://api.airtable.com/v0/${BASE_ID}/${INV_TBL}?${fields}`
-        + `&filterByFormula=${formula}&pageSize=100` + (offset ? `&offset=${offset}` : '');
+        + `&filterByFormula=${formula}&pageSize=100&returnFieldsByFieldId=true`
+        + (offset ? `&offset=${offset}` : '');
       const res = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
       if (!res.ok) {
         if (res.status === 401) throw new Error('API Key ungültig');
@@ -645,7 +646,7 @@ async function lookupEAN(ean) {
   const formula = encodeURIComponent(`({EAN_CLEAN}&"")="${clean}"`);
   const fields  = [EAN_SKU,EAN_COLOR,EAN_SIZE,EAN_LOT,EAN_DESC].map(f=>`fields[]=${f}`).join('&');
   const res = await fetch(
-    `https://api.airtable.com/v0/${BASE_ID}/${EAN_TBL}?filterByFormula=${formula}&${fields}&maxRecords=1`,
+    `https://api.airtable.com/v0/${BASE_ID}/${EAN_TBL}?filterByFormula=${formula}&${fields}&maxRecords=1&returnFieldsByFieldId=true`,
     { headers: { Authorization: `Bearer ${apiKey}` } }
   );
   if (!res.ok) {
