@@ -109,6 +109,11 @@ header p { font-size: 12px; color: var(--muted); margin-top: 3px; }
 .pending-sku  { font-size:12px;font-weight:500;color:var(--text);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
 .pending-meta { font-size:11px;color:var(--muted);font-family:ui-monospace,monospace;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
 .pending-time { font-size:11px;color:var(--muted);flex-shrink:0;white-space:nowrap; }
+.pending-tag { font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px;vertical-align:middle;white-space:nowrap; }
+.tag-unexp { background:var(--amber-light);color:var(--amber); }
+.tag-da    { background:var(--green-light);color:var(--green); }
+.tag-exp   { background:rgba(0,0,0,0.06);color:var(--muted); }
+@media (prefers-color-scheme: dark) { .tag-exp { background:rgba(255,255,255,0.08); } }
 @keyframes pendingIn { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
 .pending-row-new .pending-inner { animation:pendingIn 0.22s ease; }
 
@@ -191,10 +196,13 @@ header p { font-size: 12px; color: var(--muted); margin-top: 3px; }
 <div id="scanner-view">
   <header>
     <div class="header-top">
-      <h1>📦 EAN Scanner <span class="version">v17</span></h1>
+      <h1>📦 Wareneingang <span class="version">v18</span></h1>
       <span id="pending-badge" class="badge" style="display:none">0</span>
+      <button class="cam-btn" id="refresh-btn" onclick="loadPlaceholders()"
+        style="margin-left:auto;background:var(--surface);color:var(--muted);border:0.5px solid var(--border)">↻ Liste</button>
     </div>
     <p id="header-status">Kamera wird gestartet…</p>
+    <p style="font-size:11px;color:var(--muted);margin-top:2px">Erwartungsliste: <span id="list-status">—</span></p>
   </header>
 
   <!-- Camera -->
@@ -251,7 +259,7 @@ header p { font-size: 12px; color: var(--muted); margin-top: 3px; }
   <div class="section"><div class="spacer"></div>
     <div class="counter" id="counter">
       <div><div class="counter-num" id="counter-num">0</div><div class="counter-label">Gespeichert</div></div>
-      <div style="text-align:right"><div class="counter-num" id="counter-err" style="color:var(--red)">0</div><div class="counter-label">Nicht gefunden</div></div>
+      <div style="text-align:right"><div class="counter-num" id="counter-err" style="color:var(--red)">0</div><div class="counter-label">Unbekannt</div></div>
     </div>
   </div>
 
@@ -286,6 +294,7 @@ const BASE_ID    = 'appCrbJojuKd2ifEp';
 const EAN_TBL    = 'tblQQXW4WP1mXfapz';
 const INV_TBL    = 'tblQQ91QHguUVv1CH';
 const EAN_FLD    = 'fldKzKwU451IfDWtI';
+const EAN_CLEAN  = 'fldAwtoFWYqQVmR0C';   // EAN ohne führende Nullen (Formel) — Match-Feld
 const EAN_SKU    = 'fldPlpOKlUR8gVB3A';
 const EAN_COLOR  = 'fldF8xpeY1UNvpmdX';
 const EAN_SIZE   = 'fldq9f1VbknXtgjj1';
@@ -294,7 +303,15 @@ const EAN_DESC   = 'fldBdHSHCdlRtcQNf';
 const INV_EAN_BC = 'fldq9WPR8VwRU1p8Y';
 const INV_LINK   = 'fldP8NRGf9YdFidSU';
 const INV_DATUM  = 'fldS7qcrpUwURvXN5';
+const INV_SKU    = 'fldlJ6vEC524egixC';   // SKU stabil — Matching-Schlüssel
+const INV_STATUS = 'fldy7veZ84UHT8KVY';   // Wareneingang Status (singleSelect)
+const INV_ANZAHL = 'fldYLiwvmHfkxs75m';   // Anzahl Gescannt (number)
 const LOG_KEY    = 'ean_scan_log_v1';
+
+// ---- Status-Optionen (exakte Namen inkl. Emoji) ----
+const ST_ERWARTET   = '⏳ Erwartet';
+const ST_DA         = '✅ Da';
+const ST_UNERWARTET = '🔵 Unerwartet';
 
 // ---- WASM setup (before any readBarcodes call) ----
 const WASM_URL = new URL('./zxing_reader.wasm', window.location.href).href;
@@ -306,7 +323,12 @@ if (window.ZXingWASM) {
 
 // ---- App state ----
 let apiKey = '', scanned = 0, notFound = 0, scanLog = [];
-let pendingItems = []; // { id, ean, desc, recordId, sku, color, size, ts }
+let pendingItems = []; // { id, ean, desc, sku, color, size, eanRecordId, kind, placeholderRecordId, alreadyDa, ts }
+
+// Lokale Erwartungsliste: SKU stabil -> { recordId, status, anzahl }
+// Enthält Platzhalter (⏳/✅) UND bereits angelegte Unerwartet-Zeilen (🔵).
+let placeholderMap = {};
+let placeholdersLoaded = false;
 
 // ---- Camera state ----
 let videoStream = null, videoTrack = null, torchOn = false, currentZoom = 1, zoomCaps = null;
@@ -354,6 +376,50 @@ function showScannerView() {
   document.getElementById('setup-view').style.display  = 'none';
   document.getElementById('scanner-view').style.display = 'block';
   startCamera();
+  loadPlaceholders();
+}
+
+// ---- Erwartungsliste laden (Platzhalter + Unerwartet-Zeilen) ----
+async function loadPlaceholders() {
+  placeholdersLoaded = false;
+  updateListBadge('lädt…');
+  const map = {};
+  const fields = [INV_SKU, INV_STATUS, INV_ANZAHL].map(f => `fields[]=${f}`).join('&');
+  const formula = encodeURIComponent(`NOT({SKU stabil}="")`);
+  let offset = '', pages = 0;
+  try {
+    do {
+      const url = `https://api.airtable.com/v0/${BASE_ID}/${INV_TBL}?${fields}`
+        + `&filterByFormula=${formula}&pageSize=100` + (offset ? `&offset=${offset}` : '');
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
+      if (!res.ok) {
+        if (res.status === 401) throw new Error('API Key ungültig');
+        throw new Error(`API-Fehler ${res.status}`);
+      }
+      const data = await res.json();
+      (data.records || []).forEach(rec => {
+        const sku = rec.fields[INV_SKU];
+        if (!sku) return;
+        if (!map[sku]) map[sku] = {                 // erster gewinnt (SKU stabil ist eindeutig)
+          recordId: rec.id,
+          status: rec.fields[INV_STATUS] || ST_ERWARTET,
+          anzahl: rec.fields[INV_ANZAHL] || 0,
+        };
+      });
+      offset = data.offset || '';
+    } while (offset && ++pages < 50);
+    placeholderMap = map;
+    placeholdersLoaded = true;
+    updateListBadge(`${Object.keys(map).length} Artikel`);
+  } catch (e) {
+    updateListBadge('⚠ Liste nicht geladen');
+    setStatus('Erwartungsliste-Fehler: ' + e.message);
+  }
+}
+
+function updateListBadge(text) {
+  const el = document.getElementById('list-status');
+  if (el) el.textContent = text;
 }
 function resetApp() {
   stopCamera();
@@ -521,21 +587,21 @@ async function handleScan(code) {
   try {
     const result = await lookupEAN(code);
     if (result.found) {
-      pendingItems.unshift({
-        id: Date.now(), ean: code,
-        desc: result.desc, recordId: result.recordId,
-        sku: result.sku, color: result.color, size: result.size,
-        ts: Date.now()
-      });
+      const item = buildPendingItem(code, result);
+      pendingItems.unshift(item);
       renderPending(true);
-      showCamStatus(`✓ ${result.desc || code}`, 1400);
-      playBeep(1200, 60, 0.18);   // confirmation tone
-      vibrate([25, 15, 55]);       // double-tap feel
+      if (item.kind === 'expected') {
+        showCamStatus(`${item.alreadyDa ? '✓✓ (schon da) ' : '✓ '}${item.desc || code}`, 1400);
+        playBeep(1200, 60, 0.18); vibrate([25, 15, 55]);
+      } else {
+        showCamStatus(`🔵 Unerwartet: ${item.desc || item.sku || code}`, 1800);
+        playBeep(760, 70, 0.18); vibrate([25, 15, 25, 15, 25]);
+      }
     } else {
       notFound++;
-      addLogEntry({ ean: code, desc: '(nicht gefunden)', status: 'notfound' });
+      addLogEntry({ ean: code, desc: '(unbekannter Barcode)', status: 'notfound' });
       updateCounter();
-      showCamStatus(`✗ Nicht in Airtable: ${code}`, 2200);
+      showCamStatus(`✗ Unbekannter Barcode: ${code}`, 2200);
       playBeep(330, 140, 0.18);   // low error tone
       vibrate([80, 40, 80]);       // error pattern
     }
@@ -554,20 +620,16 @@ async function manualAdd() {
   try {
     const result = await lookupEAN(ean);
     if (result.found) {
-      pendingItems.unshift({
-        id: Date.now(), ean,
-        desc: result.desc, recordId: result.recordId,
-        sku: result.sku, color: result.color, size: result.size,
-        ts: Date.now()
-      });
+      const item = buildPendingItem(ean, result);
+      pendingItems.unshift(item);
       renderPending(true);
       setStatus('Bereit zum Scannen');
-      playBeep(1200, 60, 0.18);
+      playBeep(item.kind === 'expected' ? 1200 : 760, 60, 0.18);
     } else {
       notFound++;
-      addLogEntry({ ean, desc: '(nicht gefunden)', status: 'notfound' });
+      addLogEntry({ ean, desc: '(unbekannter Barcode)', status: 'notfound' });
       updateCounter();
-      alert(`EAN "${ean}" nicht in Airtable gefunden.`);
+      alert(`Barcode "${ean}" nicht in der EAN-Tabelle gefunden.`);
       setStatus('Bereit zum Scannen');
     }
   } catch (e) {
@@ -576,10 +638,12 @@ async function manualAdd() {
   }
 }
 
-// ---- Airtable lookup (returns data, no UI side-effects) ----
+// ---- Airtable lookup: EAN -> SKU (match auf EAN_CLEAN, ohne führende Nullen) ----
 async function lookupEAN(ean) {
-  const formula = encodeURIComponent(`{EAN}="${ean}"`);
-  const fields  = [EAN_FLD,EAN_SKU,EAN_COLOR,EAN_SIZE,EAN_LOT,EAN_DESC].map(f=>`fields[]=${f}`).join('&');
+  const clean = String(ean).replace(/^0+/, '') || '0';   // führende Nullen weg
+  // {EAN_CLEAN}&"" erzwingt String-Vergleich (Formelfeld kann numerisch sein)
+  const formula = encodeURIComponent(`({EAN_CLEAN}&"")="${clean}"`);
+  const fields  = [EAN_SKU,EAN_COLOR,EAN_SIZE,EAN_LOT,EAN_DESC].map(f=>`fields[]=${f}`).join('&');
   const res = await fetch(
     `https://api.airtable.com/v0/${BASE_ID}/${EAN_TBL}?filterByFormula=${formula}&${fields}&maxRecords=1`,
     { headers: { Authorization: `Bearer ${apiKey}` } }
@@ -591,12 +655,37 @@ async function lookupEAN(ean) {
   const data = await res.json();
   if (!data.records?.length) return { found: false };
   const rec = data.records[0], f = rec.fields;
-  const sku   = f[EAN_SKU]  || '–';
+  const sku   = f[EAN_SKU]  || '';
   const color = Array.isArray(f[EAN_COLOR]) ? f[EAN_COLOR].join(', ') : (f[EAN_COLOR] || '–');
   const size  = f[EAN_SIZE] ? (typeof f[EAN_SIZE]==='object' ? f[EAN_SIZE].name : f[EAN_SIZE]) : '–';
   const lot   = Array.isArray(f[EAN_LOT])  ? f[EAN_LOT].join(', ')  : (f[EAN_LOT]  || '–');
   const desc  = Array.isArray(f[EAN_DESC]) ? f[EAN_DESC].join(', ') : (f[EAN_DESC] || lot);
-  return { found: true, recordId: rec.id, sku, color, size, desc };
+  return { found: true, eanRecordId: rec.id, sku, color, size, desc };
+}
+
+// ---- Scan klassifizieren: erwartet (Platzhalter) vs. unerwartet ----
+function classifyScan(result) {
+  const entry = result.sku ? placeholderMap[result.sku] : null;
+  if (entry) {
+    const isUnexpected = entry.status === ST_UNERWARTET;
+    return {
+      kind: isUnexpected ? 'unexpected' : 'expected',
+      placeholderRecordId: entry.recordId,
+      alreadyDa: entry.status === ST_DA,
+    };
+  }
+  return { kind: 'unexpected', placeholderRecordId: null, alreadyDa: false };
+}
+
+function buildPendingItem(code, result) {
+  const c = classifyScan(result);
+  return {
+    id: Date.now() + Math.floor(Math.random()*1000),
+    ean: code, desc: result.desc, sku: result.sku || '–',
+    color: result.color, size: result.size, eanRecordId: result.eanRecordId,
+    kind: c.kind, placeholderRecordId: c.placeholderRecordId, alreadyDa: c.alreadyDa,
+    ts: Date.now(),
+  };
 }
 
 // ---- Pending batch UI ----
@@ -626,20 +715,26 @@ function renderPending(isNew = false) {
   countLbl.textContent = `(${n})`;
   document.getElementById('batch-save-label').textContent = `${n} Artikel in Airtable speichern`;
 
-  list.innerHTML = pendingItems.map((item, i) => `
+  list.innerHTML = pendingItems.map((item, i) => {
+    const unexp = item.kind === 'unexpected';
+    const iconStyle = unexp ? 'background:var(--amber-light);color:var(--amber)' : '';
+    const tag = unexp
+      ? '<span class="pending-tag tag-unexp">🔵 unerwartet</span>'
+      : (item.alreadyDa ? '<span class="pending-tag tag-da">schon ✅ da</span>' : '<span class="pending-tag tag-exp">erwartet</span>');
+    return `
     <div class="pending-row${isNew && i === 0 ? ' pending-row-new' : ''}" data-idx="${i}">
       <div class="pending-inner">
-        <div class="pending-icon">✓</div>
+        <div class="pending-icon" style="${iconStyle}">${unexp ? '🔵' : '✓'}</div>
         <div class="pending-body">
-          <div class="pending-name">${escapeHtml(item.desc || item.ean)}</div>
+          <div class="pending-name">${escapeHtml(item.desc || item.sku || item.ean)} ${tag}</div>
           ${item.sku !== '–' ? `<div class="pending-sku">SKU: ${escapeHtml(item.sku)}</div>` : ''}
           <div class="pending-meta">${escapeHtml(item.ean)}${item.size !== '–' ? ' · '+escapeHtml(item.size) : ''}${item.color !== '–' ? ' · '+escapeHtml(item.color) : ''}</div>
         </div>
         <div class="pending-time">${formatTime(item.ts)}</div>
       </div>
       <button class="pending-delete-btn" onclick="removePending(${i})">Löschen</button>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 function removePending(idx) {
@@ -655,12 +750,30 @@ function clearPending() {
   renderPending();
 }
 
+// ---- Airtable write helper (PATCH bestehende / POST neue Zeile) ----
+async function saveInv(method, recordId, fields) {
+  const url = `https://api.airtable.com/v0/${BASE_ID}/${INV_TBL}` + (recordId ? `/${recordId}` : '');
+  const res = await fetch(url, {
+    method,
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields }),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(()=>({}))).error?.message || `Fehler ${res.status}`);
+  return res.json();
+}
+
 // ---- Batch save to Airtable ----
 async function batchSave() {
   if (!pendingItems.length) return;
   const btn   = document.getElementById('batch-save-btn');
   const label = document.getElementById('batch-save-label');
   btn.disabled = true;
+
+  if (!placeholdersLoaded) {
+    btn.disabled = false;
+    alert('Erwartungsliste noch nicht geladen — bitte „↻ Liste" antippen und kurz warten.');
+    return;
+  }
 
   const batch = [...pendingItems]; // snapshot — new scans go to fresh array
   pendingItems = [];
@@ -674,16 +787,27 @@ async function batchSave() {
     setStatus(`Speichere ${i+1} / ${total}…`);
     const item = batch[i];
     try {
-      const res = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${INV_TBL}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: {
-          [INV_EAN_BC]: { text: String(item.ean) },
-          [INV_LINK]:   [item.recordId],
-          [INV_DATUM]:  today,
-        }}),
-      });
-      if (!res.ok) throw new Error((await res.json()).error?.message || `Fehler ${res.status}`);
+      const fields = { [INV_EAN_BC]: { text: String(item.ean) }, [INV_DATUM]: today };
+      if (item.eanRecordId) fields[INV_LINK] = [item.eanRecordId];
+
+      const entry = placeholderMap[item.sku];
+      if (entry) {
+        // Bestehende Zeile (Platzhalter oder schon angelegte Unerwartet-Zeile) → abhaken + zählen
+        const newCount  = (entry.anzahl || 0) + 1;
+        const newStatus = entry.status === ST_UNERWARTET ? ST_UNERWARTET : ST_DA;
+        fields[INV_ANZAHL] = newCount;
+        fields[INV_STATUS] = newStatus;
+        await saveInv('PATCH', entry.recordId, fields);
+        entry.anzahl = newCount; entry.status = newStatus;
+      } else {
+        // Kein Platzhalter → unerwartete Ware → neue Zeile anlegen
+        const validSku = item.sku && item.sku !== '–';
+        fields[INV_ANZAHL] = 1;
+        fields[INV_STATUS] = ST_UNERWARTET;
+        if (validSku) fields[INV_SKU] = item.sku;
+        const rec = await saveInv('POST', null, fields);
+        if (validSku) placeholderMap[item.sku] = { recordId: rec.id, status: ST_UNERWARTET, anzahl: 1 };
+      }
       addLogEntry({ ean: item.ean, desc: item.desc, status: 'saved' });
       scanned++; saved++;
     } catch (e) {
