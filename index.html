@@ -105,14 +105,16 @@ header p { font-size: 12px; color: var(--muted); margin-top: 3px; }
   display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;flex-shrink:0;
 }
 .pending-body { flex:1;min-width:0; }
-.pending-name { font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.pending-headline { display:flex;align-items:center;gap:6px; }
+.pending-name { font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0; }
 .pending-sku  { font-size:12px;font-weight:500;color:var(--text);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
 .pending-meta { font-size:11px;color:var(--muted);font-family:ui-monospace,monospace;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
 .pending-time { font-size:11px;color:var(--muted);flex-shrink:0;white-space:nowrap; }
-.pending-tag { font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px;vertical-align:middle;white-space:nowrap; }
+.pending-tag { font-size:10px;font-weight:700;padding:1px 6px;border-radius:6px;vertical-align:middle;white-space:nowrap;flex-shrink:0; }
 .tag-unexp { background:var(--amber-light);color:var(--amber); }
 .tag-da    { background:var(--green-light);color:var(--green); }
 .tag-exp   { background:rgba(0,0,0,0.06);color:var(--muted); }
+.tag-unknown { background:var(--red-light);color:var(--red); }
 @media (prefers-color-scheme: dark) { .tag-exp { background:rgba(255,255,255,0.08); } }
 @keyframes pendingIn { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
 .pending-row-new .pending-inner { animation:pendingIn 0.22s ease; }
@@ -196,7 +198,7 @@ header p { font-size: 12px; color: var(--muted); margin-top: 3px; }
 <div id="scanner-view">
   <header>
     <div class="header-top">
-      <h1>📦 Wareneingang <span class="version">v18.1</span></h1>
+      <h1>📦 Wareneingang <span class="version">v19</span></h1>
       <span id="pending-badge" class="badge" style="display:none">0</span>
       <button class="cam-btn" id="refresh-btn" onclick="loadPlaceholders()"
         style="margin-left:auto;background:var(--surface);color:var(--muted);border:0.5px solid var(--border)">↻ Liste</button>
@@ -205,8 +207,37 @@ header p { font-size: 12px; color: var(--muted); margin-top: 3px; }
     <p style="font-size:11px;color:var(--muted);margin-top:2px">Erwartungsliste: <span id="list-status">—</span></p>
   </header>
 
-  <!-- Camera -->
+  <!-- Lieferungs-Session -->
   <div class="section">
+    <div class="spacer"></div>
+    <!-- Keine aktive Session -->
+    <div class="card" id="lief-start" style="padding:14px 16px">
+      <div class="label" style="margin-bottom:10px">Neue Lieferung starten</div>
+      <div class="card" style="border-radius:10px">
+        <div class="card-row">
+          <label>Name</label>
+          <input type="text" id="lief-name" placeholder="z.B. AY KW23 Charge A" autocomplete="off">
+        </div>
+        <div class="card-row">
+          <label>Datum</label>
+          <input type="date" id="lief-date">
+        </div>
+      </div>
+      <div class="spacer-sm"></div>
+      <button class="btn btn-primary" onclick="startLieferung()">📦 Lieferung starten →</button>
+    </div>
+    <!-- Aktive Session -->
+    <div class="card" id="lief-active" style="display:none;padding:13px 16px;flex-direction:row;align-items:center;gap:12px;justify-content:space-between">
+      <div style="min-width:0">
+        <div class="label" style="margin-bottom:2px">Aktive Lieferung</div>
+        <div id="lief-active-name" style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+      </div>
+      <button class="btn btn-secondary" style="width:auto;padding:10px 16px;flex-shrink:0" onclick="endLieferung()">Beenden</button>
+    </div>
+  </div>
+
+  <!-- Camera -->
+  <div class="section" id="camera-section" style="display:none">
     <div class="spacer"></div>
     <div id="cam-wrapper">
       <video id="video" playsinline muted autoplay></video>
@@ -215,6 +246,7 @@ header p { font-size: 12px; color: var(--muted); margin-top: 3px; }
         <div class="scan-frame" id="scan-frame"><span></span><div class="scan-line"></div></div>
       </div>
       <div class="cam-controls">
+        <button class="cam-btn" id="scan-toggle-btn" onclick="toggleScan()">⏸ Stop</button>
         <button class="cam-btn" id="torch-btn" onclick="toggleTorch()" style="display:none">⚡</button>
       </div>
       <div id="zoom-controls" style="display:none">
@@ -306,7 +338,9 @@ const INV_DATUM  = 'fldS7qcrpUwURvXN5';
 const INV_SKU    = 'fldlJ6vEC524egixC';   // SKU stabil — Matching-Schlüssel
 const INV_STATUS = 'fldy7veZ84UHT8KVY';   // Wareneingang Status (singleSelect)
 const INV_ANZAHL = 'fldYLiwvmHfkxs75m';   // Anzahl Gescannt (number)
+const INV_LIEFERUNG = 'fldmLdKEYw8zQuUbj'; // Lieferung (singleLineText)
 const LOG_KEY    = 'ean_scan_log_v1';
+const LIEF_KEY   = 'ean_lieferung_v1';
 
 // ---- Status-Optionen (exakte Namen inkl. Emoji) ----
 const ST_ERWARTET   = '⏳ Erwartet';
@@ -329,6 +363,9 @@ let pendingItems = []; // { id, ean, desc, sku, color, size, eanRecordId, kind, 
 // Enthält Platzhalter (⏳/✅) UND bereits angelegte Unerwartet-Zeilen (🔵).
 let placeholderMap = {};
 let placeholdersLoaded = false;
+
+// Aktive Lieferungs-Session { name, date } | null (Pflicht zum Scannen/Speichern)
+let currentLieferung = null;
 
 // ---- Camera state ----
 let videoStream = null, videoTrack = null, torchOn = false, currentZoom = 1, zoomCaps = null;
@@ -375,8 +412,75 @@ function startApp() {
 function showScannerView() {
   document.getElementById('setup-view').style.display  = 'none';
   document.getElementById('scanner-view').style.display = 'block';
-  startCamera();
   loadPlaceholders();
+  loadLieferung();
+  applyLieferungUI();   // zeigt Session-Bar; startet Kamera nur bei aktiver Lieferung
+}
+
+// ---- Lieferungs-Session (Pflicht zum Scannen/Speichern) ----
+function loadLieferung() {
+  try { const r = localStorage.getItem(LIEF_KEY); currentLieferung = r ? JSON.parse(r) : null; }
+  catch (_) { currentLieferung = null; }
+}
+function lieferungLabel(l = currentLieferung) {
+  if (!l || !l.name) return '';
+  return l.date ? `${l.name} (${l.date})` : l.name;
+}
+function applyLieferungUI() {
+  const start  = document.getElementById('lief-start');
+  const active = document.getElementById('lief-active');
+  const cam    = document.getElementById('camera-section');
+  if (currentLieferung) {
+    start.style.display  = 'none';
+    active.style.display = 'flex';
+    document.getElementById('lief-active-name').textContent = '📦 ' + lieferungLabel();
+    cam.style.display = 'block';
+    if (!scanning) startCamera();
+  } else {
+    active.style.display = 'none';
+    start.style.display  = 'block';
+    cam.style.display    = 'none';
+    stopCamera();
+    setStatus('Keine aktive Lieferung');
+    const d = document.getElementById('lief-date');
+    if (d && !d.value) d.value = new Date().toISOString().slice(0, 10);
+  }
+}
+function startLieferung() {
+  const name = document.getElementById('lief-name').value.trim();
+  const date = document.getElementById('lief-date').value || '';
+  if (!name) { alert('Bitte einen Lieferungs-Namen eingeben.'); return; }
+  currentLieferung = { name, date };
+  try { localStorage.setItem(LIEF_KEY, JSON.stringify(currentLieferung)); } catch (_) {}
+  applyLieferungUI();
+}
+function endLieferung() {
+  const msg = pendingItems.length
+    ? `${pendingItems.length} noch nicht gespeicherte Scans gehen verloren. Lieferung wirklich beenden?`
+    : 'Lieferung beenden?';
+  if (!confirm(msg)) return;
+  pendingItems = []; renderPending();
+  currentLieferung = null;
+  try { localStorage.removeItem(LIEF_KEY); } catch (_) {}
+  document.getElementById('lief-name').value = '';
+  applyLieferungUI();
+}
+function toggleScan() {
+  if (scanning) {
+    stopCamera();
+    setStatus('Scan gestoppt');
+    document.getElementById('cam-status').textContent = '⏸ Scan gestoppt — ▶ tippen zum Starten';
+    updateScanToggle();
+  } else {
+    if (!currentLieferung) { alert('Erst eine Lieferung starten.'); return; }
+    startCamera();
+  }
+}
+function updateScanToggle() {
+  const b = document.getElementById('scan-toggle-btn');
+  if (!b) return;
+  b.textContent = scanning ? '⏸ Stop' : '▶ Scan';
+  b.classList.toggle('active', !scanning);
 }
 
 // ---- Erwartungsliste laden (Platzhalter + Unerwartet-Zeilen) ----
@@ -451,7 +555,7 @@ async function startCamera() {
   setStatus('Kamera wird gestartet…');
   try {
     videoStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
     });
   } catch (e) {
     setStatus('Kamera-Fehler');
@@ -468,7 +572,9 @@ async function startCamera() {
   await applyOptimalCameraSettings();
   setupZoomUI(); setupTorchUI();
   scanning = true;
+  updateScanToggle();
   setStatus('Bereit zum Scannen');
+  document.getElementById('cam-status').textContent = 'Barcode in den Rahmen halten';
   scanLoop();
   debugInterval = setInterval(showDebug, 600);
 }
@@ -479,11 +585,18 @@ async function scanLoop() {
   if (!isDecoding && video.readyState >= 2 && video.videoWidth > 0) {
     isDecoding = true;
     scanAttempts++;
-    if (scanCanvas.width  !== video.videoWidth)  scanCanvas.width  = video.videoWidth;
-    if (scanCanvas.height !== video.videoHeight) scanCanvas.height = video.videoHeight;
-    scanCtx.drawImage(video, 0, 0);
+    const vw = video.videoWidth, vh = video.videoHeight;
+    // ROI: nur das mittige Band (passend zum Scan-Rahmen) statt des ganzen Bildes
+    const roiW = Math.round(vw * 0.82), roiH = Math.round(vh * 0.32);
+    const sx = Math.round((vw - roiW) / 2), sy = Math.round((vh - roiH) / 2);
+    // Downscale: Zielbreite auf <=960 deckeln → drastisch weniger Pixel/Frame
+    const scale = Math.min(1, 960 / roiW);
+    const dw = Math.max(1, Math.round(roiW * scale)), dh = Math.max(1, Math.round(roiH * scale));
+    if (scanCanvas.width  !== dw) scanCanvas.width  = dw;
+    if (scanCanvas.height !== dh) scanCanvas.height = dh;
+    scanCtx.drawImage(video, sx, sy, roiW, roiH, 0, 0, dw, dh);
     try {
-      const imageData = scanCtx.getImageData(0, 0, scanCanvas.width, scanCanvas.height);
+      const imageData = scanCtx.getImageData(0, 0, dw, dh);
       const results = await ZXingWASM.readBarcodes(imageData, {
         tryHarder: true, tryRotate: false, tryInvert: false,
         tryDownscale: true, maxNumberOfSymbols: 1,
@@ -492,7 +605,7 @@ async function scanLoop() {
     } catch (e) { lastDecodeErr = String(e.message || e).slice(0, 60); }
     isDecoding = false;
   }
-  if (scanning) frameTimer = setTimeout(scanLoop, 80);
+  if (scanning) frameTimer = setTimeout(scanLoop, 140);   // ~7 fps statt ~12 → kühler
 }
 
 function stopCamera() {
@@ -600,7 +713,7 @@ async function handleScan(code) {
       }
     } else {
       notFound++;
-      addLogEntry({ ean: code, desc: '(unbekannter Barcode)', status: 'notfound' });
+      addLogEntry({ ean: code, desc: '(unbekannter Barcode)', status: 'notfound', kind: 'unbekannt' });
       updateCounter();
       showCamStatus(`✗ Unbekannter Barcode: ${code}`, 2200);
       playBeep(330, 140, 0.18);   // low error tone
@@ -616,6 +729,7 @@ async function handleScan(code) {
 async function manualAdd() {
   const ean = document.getElementById('ean-input').value.trim();
   if (!ean) return;
+  if (!currentLieferung) { alert('Erst eine Lieferung starten (oben).'); return; }
   document.getElementById('ean-input').value = '';
   setStatus('Suche…');
   try {
@@ -727,7 +841,7 @@ function renderPending(isNew = false) {
       <div class="pending-inner">
         <div class="pending-icon" style="${iconStyle}">${unexp ? '🔵' : '✓'}</div>
         <div class="pending-body">
-          <div class="pending-name">${escapeHtml(item.desc || item.sku || item.ean)} ${tag}</div>
+          <div class="pending-headline"><span class="pending-name">${escapeHtml(item.desc || item.sku || item.ean)}</span>${tag}</div>
           ${item.sku !== '–' ? `<div class="pending-sku">SKU: ${escapeHtml(item.sku)}</div>` : ''}
           <div class="pending-meta">${escapeHtml(item.ean)}${item.size !== '–' ? ' · '+escapeHtml(item.size) : ''}${item.color !== '–' ? ' · '+escapeHtml(item.color) : ''}</div>
         </div>
@@ -775,7 +889,13 @@ async function batchSave() {
     alert('Erwartungsliste noch nicht geladen — bitte „↻ Liste" antippen und kurz warten.');
     return;
   }
+  if (!currentLieferung) {
+    btn.disabled = false;
+    alert('Keine aktive Lieferung — bitte oben eine Lieferung starten.');
+    return;
+  }
 
+  const lief  = lieferungLabel();
   const batch = [...pendingItems]; // snapshot — new scans go to fresh array
   pendingItems = [];
   renderPending();
@@ -788,9 +908,10 @@ async function batchSave() {
     setStatus(`Speichere ${i+1} / ${total}…`);
     const item = batch[i];
     try {
-      const fields = { [INV_EAN_BC]: { text: String(item.ean) }, [INV_DATUM]: today };
+      const fields = { [INV_EAN_BC]: { text: String(item.ean) }, [INV_DATUM]: today, [INV_LIEFERUNG]: lief };
       if (item.eanRecordId) fields[INV_LINK] = [item.eanRecordId];
 
+      let kind;
       const entry = placeholderMap[item.sku];
       if (entry) {
         // Bestehende Zeile (Platzhalter oder schon angelegte Unerwartet-Zeile) → abhaken + zählen
@@ -800,6 +921,7 @@ async function batchSave() {
         fields[INV_STATUS] = newStatus;
         await saveInv('PATCH', entry.recordId, fields);
         entry.anzahl = newCount; entry.status = newStatus;
+        kind = newStatus === ST_UNERWARTET ? 'unerwartet' : 'da';
       } else {
         // Kein Platzhalter → unerwartete Ware → neue Zeile anlegen
         const validSku = item.sku && item.sku !== '–';
@@ -808,11 +930,12 @@ async function batchSave() {
         if (validSku) fields[INV_SKU] = item.sku;
         const rec = await saveInv('POST', null, fields);
         if (validSku) placeholderMap[item.sku] = { recordId: rec.id, status: ST_UNERWARTET, anzahl: 1 };
+        kind = 'unerwartet';
       }
-      addLogEntry({ ean: item.ean, desc: item.desc, status: 'saved' });
+      addLogEntry({ ean: item.ean, desc: item.desc, status: 'saved', kind, sku: item.sku, lieferung: lief });
       scanned++; saved++;
     } catch (e) {
-      addLogEntry({ ean: item.ean, desc: `${item.desc} ⚠`, status: 'error' });
+      addLogEntry({ ean: item.ean, desc: `${item.desc} ⚠`, status: 'error', kind: 'fehler', sku: item.sku, lieferung: lief });
       failed++;
     }
   }
@@ -905,10 +1028,23 @@ function loadLog() {
   catch (_) { scanLog = []; }
 }
 function saveLog() { try { localStorage.setItem(LOG_KEY, JSON.stringify(scanLog)); } catch (_) {} }
-function addLogEntry({ ean, desc, status }) {
-  scanLog.unshift({ ts: Date.now(), ean: String(ean), desc: String(desc||''), status });
+function addLogEntry({ ean, desc, status, kind, sku, lieferung }) {
+  scanLog.unshift({
+    ts: Date.now(), ean: String(ean), desc: String(desc||''), status,
+    kind: kind || '', sku: sku || '', lieferung: lieferung || '',
+  });
   if (scanLog.length > 500) scanLog.length = 500;
   saveLog(); renderLog();
+}
+function kindBadge(kind) {
+  if (kind === 'da')         return '<span class="pending-tag tag-da">✅ Da</span>';
+  if (kind === 'unerwartet') return '<span class="pending-tag tag-unexp">🔵 Unerwartet</span>';
+  if (kind === 'unbekannt')  return '<span class="pending-tag tag-unknown">Unbekannt</span>';
+  if (kind === 'fehler')     return '<span class="pending-tag tag-unknown">Fehler</span>';
+  return '';
+}
+function kindLabel(kind) {
+  return { da:'Da', unerwartet:'Unerwartet', unbekannt:'Unbekannt', fehler:'Fehler' }[kind] || '';
 }
 function deleteLogEntry(ts) { scanLog = scanLog.filter(e => e.ts !== ts); saveLog(); renderLog(); }
 function clearLog() {
@@ -921,11 +1057,14 @@ function renderLog() {
   if (!list) return;
   count.textContent = scanLog.length ? `(${scanLog.length})` : '';
   if (!scanLog.length) { list.innerHTML = '<div class="log-empty">Noch keine Scans</div>'; return; }
-  list.innerHTML = scanLog.map(e => `<div class="log-row" onclick="onLogTap(${e.ts})">
+  list.innerHTML = scanLog.map(e => {
+    const sub = [e.sku && e.sku !== '–' ? escapeHtml(e.sku) : escapeHtml(e.ean), e.lieferung ? escapeHtml(e.lieferung) : ''].filter(Boolean).join(' · ');
+    return `<div class="log-row" onclick="onLogTap(${e.ts})">
     <div class="log-time">${formatTime(e.ts)}</div>
-    <div class="log-body"><div class="log-desc">${escapeHtml(e.desc)||'–'}</div><div class="log-ean">${escapeHtml(e.ean)}</div></div>
+    <div class="log-body"><div class="log-desc">${escapeHtml(e.desc)||'–'} ${kindBadge(e.kind)}</div><div class="log-ean">${sub}</div></div>
     <div class="log-status ${e.status}">${e.status==='saved'?'✓':e.status==='notfound'?'✗':'!'}</div>
-  </div>`).join('');
+  </div>`;
+  }).join('');
 }
 function onLogTap(ts) {
   const e = scanLog.find(x => x.ts === ts); if (!e) return;
@@ -933,8 +1072,8 @@ function onLogTap(ts) {
 }
 function exportLogCSV() {
   if (!scanLog.length) { alert('Log ist leer.'); return; }
-  const rows = [['Datum','Uhrzeit','EAN','Beschreibung','Status']];
-  scanLog.forEach(e => { const d = new Date(e.ts); rows.push([d.toLocaleDateString('de-DE'),d.toLocaleTimeString('de-DE'),e.ean,e.desc,e.status]); });
+  const rows = [['Datum','Uhrzeit','EAN','SKU','Beschreibung','Art','Status','Lieferung']];
+  scanLog.forEach(e => { const d = new Date(e.ts); rows.push([d.toLocaleDateString('de-DE'),d.toLocaleTimeString('de-DE'),e.ean,e.sku||'',e.desc,kindLabel(e.kind),e.status,e.lieferung||'']); });
   const csv = rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(';')).join('\n');
   const blob = new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
   const url = URL.createObjectURL(blob), a = document.createElement('a');
