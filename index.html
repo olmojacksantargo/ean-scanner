@@ -204,7 +204,7 @@ header p { font-size: 12px; color: var(--muted); margin-top: 3px; }
 <div id="scanner-view">
   <header>
     <div class="header-top">
-      <h1>📦 Lager-Scanner <span class="version">v20</span></h1>
+      <h1>📦 Lager-Scanner <span class="version">v21</span></h1>
       <span id="pending-badge" class="badge" style="display:none">0</span>
       <button class="cam-btn" id="refresh-btn" onclick="loadPlaceholders()"
         style="margin-left:auto;background:var(--surface);color:var(--muted);border:0.5px solid var(--border)">↻ Liste</button>
@@ -220,8 +220,9 @@ header p { font-size: 12px; color: var(--muted); margin-top: 3px; }
     <div class="card" id="lief-start" style="padding:14px 16px">
       <div class="label" style="margin-bottom:10px">Session starten</div>
       <div class="seg">
-        <button class="seg-btn active" id="mode-eingang" onclick="setMode('eingang')">📥 Wareneingang</button>
+        <button class="seg-btn active" id="mode-eingang" onclick="setMode('eingang')">📥 Eingang</button>
         <button class="seg-btn" id="mode-versand" onclick="setMode('versand')">📤 Versand</button>
+        <button class="seg-btn" id="mode-zurueck" onclick="setMode('zurueck')">↩️ Zurück</button>
       </div>
       <div class="spacer-sm"></div>
       <div class="card" style="border-radius:10px">
@@ -245,13 +246,6 @@ header p { font-size: 12px; color: var(--muted); margin-top: 3px; }
           <div id="lief-active-name" style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
         </div>
         <button class="btn btn-secondary" style="width:auto;padding:10px 16px;flex-shrink:0" onclick="endSession()">Beenden</button>
-      </div>
-      <div id="dir-seg-wrap" style="display:none">
-        <div class="spacer-sm"></div>
-        <div class="seg">
-          <button class="seg-btn active" id="dir-raus" onclick="setDirection('raus')">📦 Raus (Außerhaus)</button>
-          <button class="seg-btn" id="dir-zurueck" onclick="setDirection('zurueck')">↩️ Zurück</button>
-        </div>
       </div>
     </div>
   </div>
@@ -361,6 +355,7 @@ const INV_ANZAHL = 'fldYLiwvmHfkxs75m';   // Anzahl Gescannt (number)
 const INV_LIEFERUNG = 'fldmLdKEYw8zQuUbj'; // Lieferung (singleLineText)
 const INV_VERSAND_STATUS = 'fldPYMbIV1nC0tIyX'; // Versand Status (singleSelect)
 const INV_VERSAND_AN     = 'fldJ0QgFj3u1hgPf4'; // Versand an (singleLineText)
+const INV_RUECKKEHR_VON  = 'fld6ecGFZzf8Akfhq'; // Rückkehr von (singleLineText)
 const LOG_KEY    = 'ean_scan_log_v1';
 const LIEF_KEY   = 'ean_session_v1';
 
@@ -388,8 +383,9 @@ let pendingItems = []; // { id, ean, desc, sku, color, size, eanRecordId, kind, 
 let placeholderMap = {};
 let placeholdersLoaded = false;
 
-// Aktive Session { mode:'eingang'|'versand', name, date, direction:'raus'|'zurueck' } | null
-// Pflicht zum Scannen/Speichern. mode='eingang' = Wareneingang, 'versand' = Ausgang.
+// Aktive Session { mode:'eingang'|'versand'|'zurueck', name, date } | null
+// Pflicht zum Scannen/Speichern. eingang = Wareneingang (echte Lieferung),
+// versand = Ausgang (→ Außerhaus), zurueck = Rückläufer (→ nur Versand Status).
 let currentSession = null;
 let startMode = 'eingang';   // im Start-Panel vorausgewählter Modus
 
@@ -443,10 +439,15 @@ function showScannerView() {
   applySessionUI();   // zeigt Session-Bar; startet Kamera nur bei aktiver Session
 }
 
-// ---- Session: 'eingang' (Wareneingang) oder 'versand' (Ausgang) ----
+// ---- Session: 'eingang' (Wareneingang), 'versand' (Ausgang) oder 'zurueck' (Rückläufer) ----
 function loadSession() {
   try { const r = localStorage.getItem(LIEF_KEY); currentSession = r ? JSON.parse(r) : null; }
   catch (_) { currentSession = null; }
+  // Migration v20 → v21: Versand-Session mit Richtung "zurueck" wird eigener Zurück-Modus
+  if (currentSession && currentSession.mode === 'versand' && currentSession.direction === 'zurueck') {
+    currentSession.mode = 'zurueck';
+    try { localStorage.setItem(LIEF_KEY, JSON.stringify(currentSession)); } catch (_) {}
+  }
   if (currentSession && currentSession.mode) startMode = currentSession.mode;
 }
 function sessionLabel(s = currentSession) {
@@ -454,21 +455,27 @@ function sessionLabel(s = currentSession) {
   return s.date ? `${s.name} (${s.date})` : s.name;
 }
 function isVersand() { return currentSession && currentSession.mode === 'versand'; }
+function isZurueck() { return currentSession && currentSession.mode === 'zurueck'; }
 
+const MODE_UI = {
+  eingang: { label: 'Name',          ph: 'z.B. AY KW23 Charge A',      btn: '📥 Wareneingang starten →', alert: 'Bitte einen Namen eingeben.' },
+  versand: { label: 'Dienstleister', ph: 'z.B. Veredler GmbH',         btn: '📤 Versand starten →',      alert: 'Bitte Dienstleister eingeben.' },
+  zurueck: { label: 'Von',           ph: 'z.B. Shooting S1 gopackshot', btn: '↩️ Zurück-Scan starten →',  alert: 'Bitte eingeben, woher die Ware zurückkommt (z.B. Shooting S1).' },
+};
 function setMode(mode) {
   startMode = mode;
-  document.getElementById('mode-eingang').classList.toggle('active', mode === 'eingang');
-  document.getElementById('mode-versand').classList.toggle('active', mode === 'versand');
-  const isV = mode === 'versand';
-  document.getElementById('sess-name-label').textContent = isV ? 'Dienstleister' : 'Name';
-  document.getElementById('sess-name').placeholder = isV ? 'z.B. Veredler GmbH' : 'z.B. AY KW23 Charge A';
-  document.getElementById('sess-start-btn').textContent = isV ? '📤 Versand starten →' : '📥 Wareneingang starten →';
+  ['eingang', 'versand', 'zurueck'].forEach(m =>
+    document.getElementById('mode-' + m).classList.toggle('active', m === mode));
+  const ui = MODE_UI[mode];
+  document.getElementById('sess-name-label').textContent = ui.label;
+  document.getElementById('sess-name').placeholder = ui.ph;
+  document.getElementById('sess-start-btn').textContent = ui.btn;
 }
 function startSession() {
   const name = document.getElementById('sess-name').value.trim();
   const date = document.getElementById('sess-date').value || '';
-  if (!name) { alert(startMode === 'versand' ? 'Bitte Dienstleister eingeben.' : 'Bitte einen Namen eingeben.'); return; }
-  currentSession = { mode: startMode, name, date, direction: 'raus' };
+  if (!name) { alert(MODE_UI[startMode].alert); return; }
+  currentSession = { mode: startMode, name, date };
   try { localStorage.setItem(LIEF_KEY, JSON.stringify(currentSession)); } catch (_) {}
   applySessionUI();
 }
@@ -483,14 +490,6 @@ function endSession() {
   document.getElementById('sess-name').value = '';
   applySessionUI();
 }
-function setDirection(dir) {
-  if (!currentSession) return;
-  currentSession.direction = dir;
-  try { localStorage.setItem(LIEF_KEY, JSON.stringify(currentSession)); } catch (_) {}
-  document.getElementById('dir-raus').classList.toggle('active', dir === 'raus');
-  document.getElementById('dir-zurueck').classList.toggle('active', dir === 'zurueck');
-  showCamStatus(`Modus: ${dir === 'raus' ? VS_AUSSER : VS_ZURUECK}`, 1500);
-}
 function applySessionUI() {
   const start  = document.getElementById('lief-start');
   const active = document.getElementById('lief-active');
@@ -498,16 +497,10 @@ function applySessionUI() {
   if (currentSession) {
     start.style.display  = 'none';
     active.style.display = 'block';
-    const isV = currentSession.mode === 'versand';
-    document.getElementById('sess-active-label').textContent = isV ? 'Aktiver Versand' : 'Aktive Lieferung';
-    document.getElementById('lief-active-name').textContent = (isV ? '📤 ' : '📥 ') + sessionLabel();
-    const dirWrap = document.getElementById('dir-seg-wrap');
-    dirWrap.style.display = isV ? 'block' : 'none';
-    if (isV) {
-      const dir = currentSession.direction || 'raus';
-      document.getElementById('dir-raus').classList.toggle('active', dir === 'raus');
-      document.getElementById('dir-zurueck').classList.toggle('active', dir === 'zurueck');
-    }
+    const labels = { eingang: ['Aktive Lieferung', '📥 '], versand: ['Aktiver Versand', '📤 '], zurueck: ['Aktive Rückkehr', '↩️ '] };
+    const [lbl, icon] = labels[currentSession.mode] || labels.eingang;
+    document.getElementById('sess-active-label').textContent = lbl;
+    document.getElementById('lief-active-name').textContent = icon + sessionLabel();
     cam.style.display = 'block';
     if (!scanning) startCamera();
   } else {
@@ -763,10 +756,10 @@ async function handleScan(code) {
       updateCounter();
       showCamStatus(`✗ Unbekannter Barcode: ${code}`, 2200);
       playBeep(330, 140, 0.18); vibrate([80, 40, 80]);
-    } else if (isVersand()) {
+    } else if (isVersand() || isZurueck()) {
       const entry = placeholderMap[result.sku];
       if (!entry) {
-        // Versand nur aus bekanntem Bestand → warnen + überspringen
+        // Versand/Zurück nur aus bekanntem Bestand → warnen + überspringen (nie neue Zeile, nie 🔵)
         notFound++;
         addLogEntry({ ean: code, desc: `${result.desc || result.sku || code} (nicht im Bestand)`, status: 'notfound', kind: 'unbekannt', sku: result.sku });
         updateCounter();
@@ -775,19 +768,28 @@ async function handleScan(code) {
       } else {
         const item = buildVersandItem(code, result, entry);
         pendingItems.unshift(item); renderPending(true);
-        const raus = item.target === VS_AUSSER;
+        const raus = item.mode === 'versand';
         showCamStatus(`${raus ? '📦 Raus' : '↩️ Zurück'}: ${item.desc || item.sku}`, 1500);
         playBeep(1000, 60, 0.18); vibrate([25, 15, 40]);
       }
     } else {
-      const item = buildPendingItem(code, result);
-      pendingItems.unshift(item); renderPending(true);
-      if (item.kind === 'expected') {
-        showCamStatus(`${item.alreadyDa ? '✓✓ (schon da) ' : '✓ '}${item.desc || code}`, 1400);
-        playBeep(1200, 60, 0.18); vibrate([25, 15, 55]);
+      const entry = result.sku ? placeholderMap[result.sku] : null;
+      if (entry && entry.versand === VS_AUSSER) {
+        // Außerhaus-Schutz: Rückläufer gehören in den ↩️ Zurück-Modus,
+        // sonst würde "Lieferung" überschrieben und doppelt gezählt.
+        addLogEntry({ ean: code, desc: `${result.desc || result.sku} (Außerhaus — im Zurück-Modus scannen)`, status: 'error', kind: 'ausserhaus', sku: result.sku });
+        showCamStatus(`📦 Artikel ist Außerhaus → im ↩️ Zurück-Modus scannen`, 2600);
+        playBeep(330, 140, 0.18); vibrate([80, 40, 80]);
       } else {
-        showCamStatus(`🔵 Unerwartet: ${item.desc || item.sku || code}`, 1800);
-        playBeep(760, 70, 0.18); vibrate([25, 15, 25, 15, 25]);
+        const item = buildPendingItem(code, result);
+        pendingItems.unshift(item); renderPending(true);
+        if (item.kind === 'expected') {
+          showCamStatus(`${item.alreadyDa ? '✓✓ (schon da) ' : '✓ '}${item.desc || code}`, 1400);
+          playBeep(1200, 60, 0.18); vibrate([25, 15, 55]);
+        } else {
+          showCamStatus(`🔵 Unerwartet: ${item.desc || item.sku || code}`, 1800);
+          playBeep(760, 70, 0.18); vibrate([25, 15, 25, 15, 25]);
+        }
       }
     }
   } catch (e) {
@@ -812,17 +814,23 @@ async function manualAdd() {
       alert(`Barcode "${ean}" nicht in der EAN-Tabelle gefunden.`);
       setStatus('Bereit zum Scannen'); return;
     }
-    if (isVersand()) {
+    if (isVersand() || isZurueck()) {
       const entry = placeholderMap[result.sku];
       if (!entry) {
         notFound++;
         addLogEntry({ ean, desc: `${result.sku || ean} (nicht im Bestand)`, status: 'notfound', kind: 'unbekannt', sku: result.sku });
         updateCounter();
-        alert(`SKU "${result.sku || ean}" ist nicht im Bestand — Versand nur aus bekanntem Bestand.`);
+        alert(`SKU "${result.sku || ean}" ist nicht im Bestand — ${isZurueck() ? 'Zurück' : 'Versand'} nur aus bekanntem Bestand.`);
         setStatus('Bereit zum Scannen'); return;
       }
       pendingItems.unshift(buildVersandItem(ean, result, entry));
     } else {
+      const entry = result.sku ? placeholderMap[result.sku] : null;
+      if (entry && entry.versand === VS_AUSSER) {
+        addLogEntry({ ean, desc: `${result.desc || result.sku} (Außerhaus — im Zurück-Modus scannen)`, status: 'error', kind: 'ausserhaus', sku: result.sku });
+        alert(`"${result.sku}" ist 📦 Außerhaus.\nRückläufer bitte im ↩️ Zurück-Modus scannen — sonst würde die Lieferung überschrieben.`);
+        setStatus('Bereit zum Scannen'); return;
+      }
       pendingItems.unshift(buildPendingItem(ean, result));
     }
     renderPending(true);
@@ -885,15 +893,16 @@ function buildPendingItem(code, result) {
   };
 }
 
-// Versand-Item: SKU ist im Bestand (entry vorhanden) → Row wird ge-PATCHt
+// Versand-/Zurück-Item: SKU ist im Bestand (entry vorhanden) → Row wird ge-PATCHt
 function buildVersandItem(code, result, entry) {
-  const target = (currentSession && currentSession.direction === 'zurueck') ? VS_ZURUECK : VS_AUSSER;
+  const zurueck = isZurueck();
   return {
     id: Date.now() + Math.floor(Math.random()*1000),
-    mode: 'versand',
+    mode: zurueck ? 'zurueck' : 'versand',
     ean: code, desc: result.desc, sku: result.sku || '–',
     color: result.color, size: result.size, eanRecordId: result.eanRecordId,
-    placeholderRecordId: entry.recordId, target,
+    placeholderRecordId: entry.recordId,
+    target: zurueck ? VS_ZURUECK : VS_AUSSER,
     alreadyOut: entry.versand === VS_AUSSER,
     ts: Date.now(),
   };
@@ -928,13 +937,13 @@ function renderPending(isNew = false) {
 
   list.innerHTML = pendingItems.map((item, i) => {
     let icon, iconStyle, tag;
-    if (item.mode === 'versand') {
-      const raus = item.target === VS_AUSSER;
+    if (item.mode === 'versand' || item.mode === 'zurueck') {
+      const raus = item.mode === 'versand';
       icon = raus ? '📦' : '↩️';
       iconStyle = 'background:var(--green-light);color:var(--green)';
       tag = raus
         ? `<span class="pending-tag tag-da">📦 Außerhaus${item.alreadyOut ? ' (schon)' : ''}</span>`
-        : '<span class="pending-tag tag-exp">↩️ Zurück</span>';
+        : `<span class="pending-tag tag-exp">↩️ Zurück${item.alreadyOut ? '' : ' (war nicht raus)'}</span>`;
     } else {
       const unexp = item.kind === 'unexpected';
       icon = unexp ? '🔵' : '✓';
@@ -998,7 +1007,7 @@ async function batchSave() {
   }
   if (!currentSession) {
     btn.disabled = false;
-    alert('Keine aktive Session — bitte oben eine Lieferung oder einen Versand starten.');
+    alert('Keine aktive Session — bitte oben Wareneingang, Versand oder Zurück starten.');
     return;
   }
 
@@ -1016,13 +1025,15 @@ async function batchSave() {
     const item = batch[i];
     try {
       let kind;
-      if (item.mode === 'versand') {
-        // Versand: bestehende Zeile patchen (Bestand garantiert beim Scan geprüft)
+      if (item.mode === 'versand' || item.mode === 'zurueck') {
+        // Versand/Zurück: bestehende Zeile patchen (Bestand garantiert beim Scan geprüft).
+        // Zurück fasst NUR Versand Status + Rückkehr von an — Lieferung/Status/Anzahl bleiben.
         const fields = { [INV_VERSAND_STATUS]: item.target };
-        if (item.target === VS_AUSSER) fields[INV_VERSAND_AN] = lief;
+        if (item.mode === 'versand') fields[INV_VERSAND_AN] = lief;
+        else fields[INV_RUECKKEHR_VON] = lief;
         await saveInv('PATCH', item.placeholderRecordId, fields);
         const e2 = placeholderMap[item.sku]; if (e2) e2.versand = item.target;
-        kind = item.target === VS_AUSSER ? 'ausserhaus' : 'zurueck';
+        kind = item.mode === 'versand' ? 'ausserhaus' : 'zurueck';
       } else {
         const fields = { [INV_EAN_BC]: { text: String(item.ean) }, [INV_DATUM]: today, [INV_LIEFERUNG]: lief };
         if (item.eanRecordId) fields[INV_LINK] = [item.eanRecordId];
