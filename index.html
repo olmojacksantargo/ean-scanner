@@ -59,7 +59,9 @@ header p { font-size: 12px; color: var(--muted); margin-top: 3px; }
 .card-row { display: flex; align-items: center; padding: 13px 16px; gap: 12px; border-bottom: 0.5px solid var(--border); }
 .card-row:last-child { border-bottom: none; }
 .card-row label { font-size: 14px; color: var(--muted); flex-shrink: 0; width: 80px; }
-.card-row input { flex: 1; background: transparent; border: none; outline: none; font-size: 14px; color: var(--text); font-family: inherit; -webkit-appearance: none; }
+.card-row input, .card-row select { flex: 1; min-width: 0; background: transparent; border: none; outline: none; font-size: 14px; color: var(--text); font-family: inherit; -webkit-appearance: none; text-overflow: ellipsis; }
+.sess-progress { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.35; }
+.sess-missing { font-size: 12px; font-family: ui-monospace, monospace; line-height: 1.6; max-height: 220px; overflow-y: auto; margin-top: 4px; }
 
 /* Camera */
 #cam-wrapper { width: 100%; border-radius: var(--radius); overflow: hidden; background: #000; aspect-ratio: 3/4; position: relative; }
@@ -204,7 +206,7 @@ header p { font-size: 12px; color: var(--muted); margin-top: 3px; }
 <div id="scanner-view">
   <header>
     <div class="header-top">
-      <h1>📦 Lager-Scanner <span class="version">v21</span></h1>
+      <h1>📦 Lager-Scanner <span class="version">v22</span></h1>
       <span id="pending-badge" class="badge" style="display:none">0</span>
       <button class="cam-btn" id="refresh-btn" onclick="loadPlaceholders()"
         style="margin-left:auto;background:var(--surface);color:var(--muted);border:0.5px solid var(--border)">↻ Liste</button>
@@ -226,7 +228,11 @@ header p { font-size: 12px; color: var(--muted); margin-top: 3px; }
       </div>
       <div class="spacer-sm"></div>
       <div class="card" style="border-radius:10px">
-        <div class="card-row">
+        <div class="card-row" id="sendung-row" style="display:none">
+          <select id="sess-sendung" onchange="onSendungChange()" style="font-weight:600"></select>
+          <span style="color:var(--muted);font-size:12px;pointer-events:none">▼</span>
+        </div>
+        <div class="card-row" id="sess-name-row">
           <label id="sess-name-label">Name</label>
           <input type="text" id="sess-name" placeholder="z.B. AY KW23 Charge A" autocomplete="off">
         </div>
@@ -246,6 +252,11 @@ header p { font-size: 12px; color: var(--muted); margin-top: 3px; }
           <div id="lief-active-name" style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
         </div>
         <button class="btn btn-secondary" style="width:auto;padding:10px 16px;flex-shrink:0" onclick="endSession()">Beenden</button>
+      </div>
+      <div id="sess-progress" class="sess-progress" style="display:none"></div>
+      <div id="sess-missing-wrap" style="display:none">
+        <button class="log-action-btn" id="sess-missing-btn" onclick="toggleMissing()" style="padding:6px 0 2px">Fehlende anzeigen</button>
+        <div id="sess-missing" class="sess-missing" style="display:none"></div>
       </div>
     </div>
   </div>
@@ -470,14 +481,116 @@ function setMode(mode) {
   document.getElementById('sess-name-label').textContent = ui.label;
   document.getElementById('sess-name').placeholder = ui.ph;
   document.getElementById('sess-start-btn').textContent = ui.btn;
+  document.getElementById('sendung-row').style.display = mode === 'zurueck' ? '' : 'none';
+  if (mode === 'zurueck') renderSendungPicker(); else onSendungChange();
 }
+
+// ---- Offene Sendungen (Versand an → Artikel, die noch 📦 Außerhaus sind) ----
+const SENDUNG_FREI = '__frei__';
+function sendungBaseName(versandAn) {
+  return String(versandAn || '').replace(/\s*\(\d{4}-\d{2}-\d{2}\)\s*$/, '');
+}
+function sendungShort(versandAn) {
+  const m = String(versandAn || '').match(/\((\d{4})-(\d{2})-(\d{2})\)\s*$/);
+  return m ? `${sendungBaseName(versandAn)} (${m[3]}.${m[2]}.)` : String(versandAn || '');
+}
+function openSendungen() {
+  const counts = {};
+  Object.values(placeholderMap).forEach(e => {
+    if (e.versand === VS_AUSSER && e.versandAn) counts[e.versandAn] = (counts[e.versandAn] || 0) + 1;
+  });
+  return Object.keys(counts).sort().map(name => ({ name, open: counts[name] }));
+}
+function renderSendungPicker() {
+  const sel = document.getElementById('sess-sendung');
+  const prev = sel.value;
+  const typed = document.getElementById('sess-name').value.trim();
+  const list = placeholdersLoaded ? openSendungen() : [];
+  const head = !placeholdersLoaded
+    ? `<option value="${SENDUNG_FREI}">⏳ Sendungen laden…</option>`
+    : (list.length ? '' : `<option value="${SENDUNG_FREI}">Keine offene Sendung</option>`);
+  sel.innerHTML = head
+    + list.map(s => `<option value="${escapeHtml(s.name)}">↩️ ${escapeHtml(sendungShort(s.name))} · ${s.open} offen</option>`).join('')
+    + (list.length ? `<option value="${SENDUNG_FREI}">✏️ Andere (frei eingeben)</option>` : '');
+  const keepFrei = prev === SENDUNG_FREI && typed;
+  if (keepFrei) sel.value = SENDUNG_FREI;
+  else if (list.some(s => s.name === prev)) sel.value = prev;
+  else if (list.length) sel.value = list[0].name;
+  onSendungChange();
+}
+function onSendungChange() {
+  const sel = document.getElementById('sess-sendung');
+  const useSelect = startMode === 'zurueck' && sel.value && sel.value !== SENDUNG_FREI;
+  document.getElementById('sess-name-row').style.display = useSelect ? 'none' : '';
+}
+
 function startSession() {
-  const name = document.getElementById('sess-name').value.trim();
   const date = document.getElementById('sess-date').value || '';
+  const sel  = document.getElementById('sess-sendung').value;
+  let name = document.getElementById('sess-name').value.trim();
+  let sendung = '';
+  if (startMode === 'zurueck' && sel && sel !== SENDUNG_FREI) {
+    sendung = sel;
+    name = sendungBaseName(sel);
+  }
   if (!name) { alert(MODE_UI[startMode].alert); return; }
   currentSession = { mode: startMode, name, date };
+  if (sendung) currentSession.sendung = sendung;
   try { localStorage.setItem(LIEF_KEY, JSON.stringify(currentSession)); } catch (_) {}
   applySessionUI();
+}
+
+// Doppelbuchung verhindern: pro SKU ist genau 1 Stück raus/zurück
+function versandDuplicate(sku, entry) {
+  if (pendingItems.some(p => p.mode === currentSession.mode && p.sku === sku)) return { text: 'Schon gescannt', logged: false };
+  if (isZurueck() && entry.versand === VS_ZURUECK) return { text: 'Schon zurückgebucht', logged: true };
+  return null;
+}
+
+// Stand der gewählten Sendung: gesamt, zurückgebucht, ungespeichert, noch fehlend
+function sendungStats() {
+  const sendung = isZurueck() && currentSession.sendung;
+  if (!sendung || !placeholdersLoaded) return null;
+  const entries = Object.entries(placeholderMap).filter(([, e]) => e.versandAn === sendung);
+  const pendingSkus = new Set(pendingItems.filter(p => p.mode === 'zurueck').map(p => p.sku));
+  const back = entries.filter(([, e]) => e.versand === VS_ZURUECK).length;
+  const pend = entries.filter(([sku, e]) => e.versand !== VS_ZURUECK && pendingSkus.has(sku)).length;
+  const missing = entries.filter(([sku, e]) => e.versand !== VS_ZURUECK && !pendingSkus.has(sku)).map(([sku]) => sku).sort();
+  return { sendung, total: entries.length, back, pend, missing };
+}
+
+let showMissing = false;
+function toggleMissing() { showMissing = !showMissing; updateSessionProgress(); }
+
+function updateSessionProgress() {
+  const el = document.getElementById('sess-progress');
+  const wrap = document.getElementById('sess-missing-wrap');
+  if (!el) return;
+  const s = sendungStats();
+  if (!s) { el.style.display = 'none'; wrap.style.display = 'none'; return; }
+  const name = `Sendung ${sendungShort(s.sendung)}`;
+  const done = !s.missing.length;
+  if (done && !s.pend) el.innerHTML = `<b style="color:var(--green)">✅ ${escapeHtml(name)}: alle ${s.total} zurück</b>`;
+  else if (done) el.innerHTML = `<b style="color:var(--green)">✅ Alle ${s.total} gescannt</b> · ${s.pend} noch speichern`;
+  else el.textContent = `${name}: ${s.back} / ${s.total} zurück` + (s.pend ? ` · +${s.pend} ungespeichert` : '') + ` · ${s.missing.length} fehlen`;
+  el.style.display = 'block';
+  wrap.style.display = done ? 'none' : 'block';
+  document.getElementById('sess-missing-btn').textContent = showMissing ? 'Fehlende ausblenden' : `Fehlende anzeigen (${s.missing.length})`;
+  const list = document.getElementById('sess-missing');
+  list.style.display = showMissing ? 'block' : 'none';
+  if (showMissing) list.innerHTML = s.missing.map(escapeHtml).join('<br>');
+}
+
+// Alte Zurück-Session ohne gewählte Sendung: per Name der offenen Sendung zuordnen
+function resolveSessionSendung() {
+  if (!isZurueck() || currentSession.sendung || !placeholdersLoaded) return;
+  const n = (currentSession.name || '').trim().toLowerCase();
+  const hit = openSendungen().find(s => sendungBaseName(s.name).toLowerCase() === n);
+  if (!hit) return;
+  currentSession.sendung = hit.name;
+  currentSession.name = sendungBaseName(hit.name);
+  try { localStorage.setItem(LIEF_KEY, JSON.stringify(currentSession)); } catch (_) {}
+  document.getElementById('lief-active-name').textContent = '↩️ ' + sessionLabel();
 }
 function endSession() {
   const msg = pendingItems.length
@@ -501,6 +614,7 @@ function applySessionUI() {
     const [lbl, icon] = labels[currentSession.mode] || labels.eingang;
     document.getElementById('sess-active-label').textContent = lbl;
     document.getElementById('lief-active-name').textContent = icon + sessionLabel();
+    updateSessionProgress();
     cam.style.display = 'block';
     if (!scanning) startCamera();
   } else {
@@ -537,7 +651,7 @@ async function loadPlaceholders() {
   placeholdersLoaded = false;
   updateListBadge('lädt…');
   const map = {};
-  const fields = [INV_SKU, INV_STATUS, INV_ANZAHL, INV_VERSAND_STATUS].map(f => `fields[]=${f}`).join('&');
+  const fields = [INV_SKU, INV_STATUS, INV_ANZAHL, INV_VERSAND_STATUS, INV_VERSAND_AN].map(f => `fields[]=${f}`).join('&');
   const formula = encodeURIComponent(`NOT({SKU stabil}="")`);
   let offset = '', pages = 0;
   try {
@@ -559,6 +673,7 @@ async function loadPlaceholders() {
           status: rec.fields[INV_STATUS] || ST_ERWARTET,
           anzahl: rec.fields[INV_ANZAHL] || 0,
           versand: rec.fields[INV_VERSAND_STATUS] || '',
+          versandAn: rec.fields[INV_VERSAND_AN] || '',
         };
       });
       offset = data.offset || '';
@@ -566,6 +681,8 @@ async function loadPlaceholders() {
     placeholderMap = map;
     placeholdersLoaded = true;
     updateListBadge(`${Object.keys(map).length} Artikel`);
+    resolveSessionSendung();
+    if (currentSession) updateSessionProgress(); else if (startMode === 'zurueck') renderSendungPicker();
   } catch (e) {
     updateListBadge('⚠ Liste nicht geladen');
     setStatus('Erwartungsliste-Fehler: ' + e.message);
@@ -758,7 +875,13 @@ async function handleScan(code) {
       playBeep(330, 140, 0.18); vibrate([80, 40, 80]);
     } else if (isVersand() || isZurueck()) {
       const entry = placeholderMap[result.sku];
-      if (!entry) {
+      const dup = entry && versandDuplicate(result.sku, entry);
+      if (dup) {
+        // Pro SKU ist genau 1 Stück unterwegs → zweiter Scan wäre Doppelbuchung
+        if (dup.logged) addLogEntry({ ean: code, desc: `${result.desc || result.sku} (${dup.text} — übersprungen)`, status: 'error', kind: 'zurueck', sku: result.sku });
+        showCamStatus(`⛔ ${dup.text}: ${result.desc || result.sku}`, 2400);
+        playBeep(330, 140, 0.18); vibrate([80, 40, 80]);
+      } else if (!entry) {
         // Versand/Zurück nur aus bekanntem Bestand → warnen + überspringen (nie neue Zeile, nie 🔵)
         notFound++;
         addLogEntry({ ean: code, desc: `${result.desc || result.sku || code} (nicht im Bestand)`, status: 'notfound', kind: 'unbekannt', sku: result.sku });
@@ -768,9 +891,18 @@ async function handleScan(code) {
       } else {
         const item = buildVersandItem(code, result, entry);
         pendingItems.unshift(item); renderPending(true);
-        const raus = item.mode === 'versand';
-        showCamStatus(`${raus ? '📦 Raus' : '↩️ Zurück'}: ${item.desc || item.sku}`, 1500);
-        playBeep(1000, 60, 0.18); vibrate([25, 15, 40]);
+        const stats = sendungStats();
+        if (item.otherSendung) {
+          showCamStatus(`⚠ Andere Sendung (${item.otherSendung}): ${item.desc || item.sku}`, 2600);
+          playBeep(760, 70, 0.18); vibrate([25, 15, 25, 15, 25]);
+        } else if (stats && stats.total && !stats.missing.length) {
+          showCamStatus(`✅ Letzter Artikel — alle ${stats.total} gescannt, jetzt speichern`, 4000);
+          playBeep(1200, 60, 0.18); setTimeout(() => playBeep(1500, 90, 0.18), 90); vibrate([40, 20, 40, 20, 70]);
+        } else {
+          const raus = item.mode === 'versand';
+          showCamStatus(`${raus ? '📦 Raus' : '↩️ Zurück'}: ${item.desc || item.sku}`, 1500);
+          playBeep(1000, 60, 0.18); vibrate([25, 15, 40]);
+        }
       }
     } else {
       const entry = result.sku ? placeholderMap[result.sku] : null;
@@ -816,6 +948,12 @@ async function manualAdd() {
     }
     if (isVersand() || isZurueck()) {
       const entry = placeholderMap[result.sku];
+      const dup = entry && versandDuplicate(result.sku, entry);
+      if (dup) {
+        if (dup.logged) addLogEntry({ ean, desc: `${result.desc || result.sku} (${dup.text} — übersprungen)`, status: 'error', kind: 'zurueck', sku: result.sku });
+        alert(`⛔ ${dup.text}: ${result.sku}\nNicht erneut aufgenommen (nur 1 Stück unterwegs).`);
+        setStatus('Bereit zum Scannen'); return;
+      }
       if (!entry) {
         notFound++;
         addLogEntry({ ean, desc: `${result.sku || ean} (nicht im Bestand)`, status: 'notfound', kind: 'unbekannt', sku: result.sku });
@@ -904,12 +1042,15 @@ function buildVersandItem(code, result, entry) {
     placeholderRecordId: entry.recordId,
     target: zurueck ? VS_ZURUECK : VS_AUSSER,
     alreadyOut: entry.versand === VS_AUSSER,
+    otherSendung: (zurueck && currentSession.sendung && entry.versand === VS_AUSSER
+                   && entry.versandAn !== currentSession.sendung) ? (entry.versandAn || '?') : '',
     ts: Date.now(),
   };
 }
 
 // ---- Pending batch UI ----
 function renderPending(isNew = false) {
+  updateSessionProgress();
   const section  = document.getElementById('pending-section');
   const list     = document.getElementById('pending-list');
   const bar      = document.getElementById('save-bar');
@@ -940,10 +1081,10 @@ function renderPending(isNew = false) {
     if (item.mode === 'versand' || item.mode === 'zurueck') {
       const raus = item.mode === 'versand';
       icon = raus ? '📦' : '↩️';
-      iconStyle = 'background:var(--green-light);color:var(--green)';
-      tag = raus
-        ? `<span class="pending-tag tag-da">📦 Außerhaus${item.alreadyOut ? ' (schon)' : ''}</span>`
-        : `<span class="pending-tag tag-exp">↩️ Zurück${item.alreadyOut ? '' : ' (war nicht raus)'}</span>`;
+      iconStyle = item.otherSendung ? 'background:var(--amber-light);color:var(--amber)' : 'background:var(--green-light);color:var(--green)';
+      if (raus) tag = `<span class="pending-tag tag-da">📦 Außerhaus${item.alreadyOut ? ' (schon)' : ''}</span>`;
+      else if (item.otherSendung) tag = '<span class="pending-tag tag-unexp">↩️ andere Sendung</span>';
+      else tag = `<span class="pending-tag tag-exp">↩️ Zurück${item.alreadyOut ? '' : ' (war nicht raus)'}</span>`;
     } else {
       const unexp = item.kind === 'unexpected';
       icon = unexp ? '🔵' : '✓';
@@ -1032,7 +1173,8 @@ async function batchSave() {
         if (item.mode === 'versand') fields[INV_VERSAND_AN] = lief;
         else fields[INV_RUECKKEHR_VON] = lief;
         await saveInv('PATCH', item.placeholderRecordId, fields);
-        const e2 = placeholderMap[item.sku]; if (e2) e2.versand = item.target;
+        const e2 = placeholderMap[item.sku];
+        if (e2) { e2.versand = item.target; if (item.mode === 'versand') e2.versandAn = lief; }
         kind = item.mode === 'versand' ? 'ausserhaus' : 'zurueck';
       } else {
         const fields = { [INV_EAN_BC]: { text: String(item.ean) }, [INV_DATUM]: today, [INV_LIEFERUNG]: lief };
@@ -1070,6 +1212,16 @@ async function batchSave() {
   updateCounter();
   renderPending(); // show fresh pending items scanned during save
 
+  const stats = sendungStats();
+  if (failed === 0 && stats && stats.total && !stats.missing.length && !stats.pend) {
+    setStatus(`✅ ${saved} gespeichert — Sendung komplett zurück!`);
+    playBeep(880, 70, 0.22);
+    setTimeout(() => playBeep(1200, 90, 0.18), 85);
+    setTimeout(() => playBeep(1600, 120, 0.18), 190);
+    vibrate([40, 20, 40, 20, 70, 20, 120]);
+    setTimeout(() => setStatus('Bereit zum Scannen'), 5000);
+    return;
+  }
   if (failed === 0) {
     setStatus(`✓ ${saved} Artikel gespeichert`);
     playBeep(880, 70, 0.22);

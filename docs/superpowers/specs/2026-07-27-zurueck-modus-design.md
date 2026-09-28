@@ -40,6 +40,24 @@ Drei klar getrennte Abläufe, direkt auf oberster Ebene erkennbar:
 - Scan-Log: vorhandene Kinds `ausserhaus`/`zurueck` bleiben; Wareneingang-Schutz loggt
   mit Status `error` + Kind `ausserhaus`.
 
+## v22 — Sendungs-Auswahl, Vollständigkeit, Doppelbuchungs-Schutz (2026-09-28)
+
+- **Auswahl statt Freitext:** Im Zurück-Modus listet ein Dropdown alle offenen Sendungen
+  (Werte von `Versand an` mit Artikeln im Status `📦 Außerhaus`, z.B.
+  „↩️ GoPackshot S2 (20.07.) · 74 offen"). Die Auswahl setzt den Session-Namen auf den
+  exakten Sendungsnamen ohne Datum; `Rückkehr von` wird „GoPackshot S2 (Rückgabedatum)".
+  Letzte Option „✏️ Andere (frei eingeben)" blendet das Textfeld ein.
+- **Vollständigkeit:** Aktive Session zeigt „x / y zurück · n fehlen", aufklappbare Liste
+  der fehlenden SKUs, grünes „✅ alle zurück" wenn komplett; beim letzten Scan und nach dem
+  Speichern gibt es eine Abschluss-Meldung.
+- **Kein Doppelt-Einbuchen:** Pro SKU ist genau 1 Stück unterwegs. Ein zweiter Scan
+  derselben SKU in der Liste oder eine SKU, die schon `↩️ Zurück` ist, wird abgelehnt und
+  nicht aufgenommen (bereits zurückgebucht → Log-Eintrag „übersprungen").
+- **Andere Sendung:** Artikel, die zu einer anderen offenen Sendung gehören, werden
+  aufgenommen, aber orange als „andere Sendung" markiert.
+- Laufende v21-Zurück-Sessions werden per Namensvergleich (ohne Groß/Klein) automatisch
+  ihrer Sendung zugeordnet und auf die exakte Schreibweise gebracht.
+
 ## Nicht geändert
 
 Match-Kette EAN → `EAN_CLEAN` → SKU → `SKU stabil`, Unerwartet-Logik im Wareneingang,
