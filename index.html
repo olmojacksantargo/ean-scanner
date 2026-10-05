@@ -207,7 +207,7 @@ header p { font-size: 12px; color: var(--muted); margin-top: 3px; }
 <div id="scanner-view">
   <header>
     <div class="header-top">
-      <h1>📦 Lager-Scanner <span class="version">v24</span></h1>
+      <h1>📦 Lager-Scanner <span class="version">v25</span></h1>
       <span id="pending-badge" class="badge" style="display:none">0</span>
       <button class="cam-btn" id="refresh-btn" onclick="loadPlaceholders()"
         style="margin-left:auto;background:var(--surface);color:var(--muted);border:0.5px solid var(--border)">↻ Liste</button>
@@ -243,6 +243,14 @@ header p { font-size: 12px; color: var(--muted); margin-top: 3px; }
           <input type="date" id="sess-date">
         </div>
       </div>
+      <div id="zweck-wrap" style="display:none">
+        <div class="spacer-sm"></div>
+        <div class="label" style="margin-bottom:6px">Zweck</div>
+        <div class="seg">
+          <button class="seg-btn" id="zweck-komplett" onclick="setZweck('komplett')">📸 Komplett</button>
+          <button class="seg-btn" id="zweck-packshot" onclick="setZweck('packshot')">📸 Nur Packshot</button>
+        </div>
+      </div>
       <div class="spacer-sm"></div>
       <button class="btn btn-primary" id="sess-start-btn" onclick="startSession()">📥 Wareneingang starten →</button>
     </div>
@@ -252,8 +260,17 @@ header p { font-size: 12px; color: var(--muted); margin-top: 3px; }
         <div style="min-width:0">
           <div class="label" style="margin-bottom:2px" id="sess-active-label">Aktive Session</div>
           <div id="lief-active-name" style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+          <div id="sess-zweck" class="sess-progress" style="display:none"></div>
         </div>
         <button class="btn btn-secondary" style="width:auto;padding:10px 16px;flex-shrink:0" onclick="endSession()">Beenden</button>
+      </div>
+      <div id="sess-zweck-pick" style="display:none">
+        <div class="spacer-sm"></div>
+        <div class="label" style="margin-bottom:6px;color:var(--amber)">Zweck wählen (vor dem Speichern)</div>
+        <div class="seg">
+          <button class="seg-btn" onclick="setSessionZweck('komplett')">📸 Komplett</button>
+          <button class="seg-btn" onclick="setSessionZweck('packshot')">📸 Nur Packshot</button>
+        </div>
       </div>
       <div id="sess-progress" class="sess-progress" style="display:none"></div>
       <div id="sess-missing-wrap" style="display:none">
@@ -369,6 +386,7 @@ const INV_LIEFERUNG = 'fldmLdKEYw8zQuUbj'; // Lieferung (singleLineText)
 const INV_VERSAND_STATUS = 'fldPYMbIV1nC0tIyX'; // Versand Status (singleSelect)
 const INV_VERSAND_AN     = 'fldJ0QgFj3u1hgPf4'; // Versand an (singleLineText)
 const INV_RUECKKEHR_VON  = 'fld6ecGFZzf8Akfhq'; // Rückkehr von (singleLineText)
+const INV_FOTO_PLAN      = 'fldCXdWYiqrt1zPuA'; // Foto Plan (singleSelect)
 const LOG_KEY    = 'ean_scan_log_v1';
 const PENDING_KEY = 'ean_pending_v1';
 const LIEF_KEY   = 'ean_session_v1';
@@ -379,6 +397,9 @@ const ST_DA         = '✅ Da';
 const ST_UNERWARTET = '🔵 Unerwartet';
 const VS_AUSSER     = '📦 Außerhaus';
 const VS_ZURUECK    = '↩️ Zurück';
+// Zweck einer Versand-Session → Foto Plan. "Nur Packshot" hält den LOT auf 🟡 Teilweise,
+// bis "AI Foto" abgehakt ist.
+const FOTO_PLAN = { komplett: '📸 Shooting komplett', packshot: '📸 Shooting nur Packshot' };
 
 // ---- WASM setup (before any readBarcodes call) ----
 const WASM_URL = new URL('./zxing_reader.wasm', window.location.href).href;
@@ -539,7 +560,28 @@ function setMode(mode) {
   document.getElementById('sess-name').placeholder = ui.ph;
   document.getElementById('sess-start-btn').textContent = ui.btn;
   document.getElementById('sendung-row').style.display = mode === 'zurueck' ? '' : 'none';
+  document.getElementById('zweck-wrap').style.display = mode === 'versand' ? '' : 'none';
   if (mode === 'zurueck') renderSendungPicker(); else onSendungChange();
+}
+
+let startZweck = '';   // bewusst ohne Vorauswahl: Versand startet erst mit gewähltem Zweck
+function setZweck(z) {
+  startZweck = z;
+  ['komplett', 'packshot'].forEach(k => document.getElementById('zweck-' + k).classList.toggle('active', k === z));
+}
+function setSessionZweck(z) {
+  if (!currentSession) return;
+  currentSession.zweck = z;
+  try { localStorage.setItem(LIEF_KEY, JSON.stringify(currentSession)); } catch (_) {}
+  renderSessionZweck();
+}
+function renderSessionZweck() {
+  const isV = isVersand();
+  const z = isV && currentSession.zweck;
+  const el = document.getElementById('sess-zweck');
+  el.textContent = z ? `Zweck: ${FOTO_PLAN[z]}` : '';
+  el.style.display = z ? 'block' : 'none';
+  document.getElementById('sess-zweck-pick').style.display = isV && !z ? 'block' : 'none';
 }
 
 // ---- Offene Sendungen (Versand an → Artikel, die noch 📦 Außerhaus sind) ----
@@ -591,8 +633,11 @@ function startSession() {
     name = sendungBaseName(sel);
   }
   if (!name) { alert(MODE_UI[startMode].alert); return; }
+  if (startMode === 'versand' && !startZweck) { alert('Bitte den Zweck wählen: Komplett-Shooting oder Nur Packshot.'); return; }
   currentSession = { mode: startMode, name, date };
   if (sendung) currentSession.sendung = sendung;
+  if (startMode === 'versand') currentSession.zweck = startZweck;
+  setZweck('');
   try { localStorage.setItem(LIEF_KEY, JSON.stringify(currentSession)); } catch (_) {}
   applySessionUI();
 }
@@ -671,6 +716,7 @@ function applySessionUI() {
     const [lbl, icon] = labels[currentSession.mode] || labels.eingang;
     document.getElementById('sess-active-label').textContent = lbl;
     document.getElementById('lief-active-name').textContent = icon + sessionLabel();
+    renderSessionZweck();
     updateSessionProgress();
     cam.style.display = 'block';
     if (!scanning) startCamera();
@@ -708,7 +754,7 @@ async function loadPlaceholders() {
   placeholdersLoaded = false;
   updateListBadge('lädt…');
   const map = {};
-  const fields = [INV_SKU, INV_STATUS, INV_ANZAHL, INV_VERSAND_STATUS, INV_VERSAND_AN].map(f => `fields[]=${f}`).join('&');
+  const fields = [INV_SKU, INV_STATUS, INV_ANZAHL, INV_VERSAND_STATUS, INV_VERSAND_AN, INV_FOTO_PLAN].map(f => `fields[]=${f}`).join('&');
   const formula = encodeURIComponent(`NOT({SKU stabil}="")`);
   let offset = '', pages = 0;
   try {
@@ -731,6 +777,7 @@ async function loadPlaceholders() {
           anzahl: rec.fields[INV_ANZAHL] || 0,
           versand: rec.fields[INV_VERSAND_STATUS] || '',
           versandAn: rec.fields[INV_VERSAND_AN] || '',
+          fotoPlan: rec.fields[INV_FOTO_PLAN] || '',
         };
       });
       offset = data.offset || '';
@@ -1209,6 +1256,11 @@ async function batchSave() {
     alert('Keine aktive Session — bitte oben Wareneingang, Versand oder Zurück starten.');
     return;
   }
+  if (isVersand() && !currentSession.zweck) {
+    btn.disabled = false;
+    alert('Bitte oben erst den Zweck wählen: Komplett-Shooting oder Nur Packshot.');
+    return;
+  }
 
   const lief  = sessionLabel();
   const batch = [...pendingItems]; // snapshot — new scans go to fresh array
@@ -1229,11 +1281,18 @@ async function batchSave() {
         // Versand/Zurück: bestehende Zeile patchen (Bestand garantiert beim Scan geprüft).
         // Zurück fasst NUR Versand Status + Rückkehr von an — Lieferung/Status/Anzahl bleiben.
         const fields = { [INV_VERSAND_STATUS]: item.target };
-        if (item.mode === 'versand') fields[INV_VERSAND_AN] = lief;
-        else fields[INV_RUECKKEHR_VON] = lief;
-        await saveInv('PATCH', item.placeholderRecordId, fields);
         const e2 = placeholderMap[item.sku];
-        if (e2) { e2.versand = item.target; if (item.mode === 'versand') e2.versandAn = lief; }
+        if (item.mode === 'versand') {
+          fields[INV_VERSAND_AN] = lief;
+          const plan = FOTO_PLAN[currentSession.zweck];
+          // Ein früheres Komplett-Shooting nicht durch "nur Packshot" zurückstufen
+          if (plan && !(plan === FOTO_PLAN.packshot && e2 && e2.fotoPlan === FOTO_PLAN.komplett)) fields[INV_FOTO_PLAN] = plan;
+        } else fields[INV_RUECKKEHR_VON] = lief;
+        await saveInv('PATCH', item.placeholderRecordId, fields);
+        if (e2) {
+          e2.versand = item.target;
+          if (item.mode === 'versand') { e2.versandAn = lief; if (fields[INV_FOTO_PLAN]) e2.fotoPlan = fields[INV_FOTO_PLAN]; }
+        }
         kind = item.mode === 'versand' ? 'ausserhaus' : 'zurueck';
       } else {
         const fields = { [INV_EAN_BC]: { text: String(item.ean) }, [INV_DATUM]: today, [INV_LIEFERUNG]: lief };

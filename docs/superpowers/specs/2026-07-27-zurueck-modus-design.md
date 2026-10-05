@@ -58,6 +58,19 @@ Drei klar getrennte Abläufe, direkt auf oberster Ebene erkennbar:
 - Laufende v21-Zurück-Sessions werden per Namensvergleich (ohne Groß/Klein) automatisch
   ihrer Sendung zugeordnet und auf die exakte Schreibweise gebracht.
 
+## v25 — Zweck beim Versand → Foto Plan (2026-10-05)
+
+- Versand-Session braucht einen Zweck: **📸 Komplett** oder **📸 Nur Packshot** (keine
+  Vorauswahl, Start ohne Zweck wird abgelehnt). Gespeichert als `zweck` in der Session.
+- Beim Speichern setzt jeder Versand-Scan **Foto Plan** (`fldCXdWYiqrt1zPuA`) auf
+  „📸 Shooting komplett" bzw. „📸 Shooting nur Packshot". Ein vorhandenes
+  „📸 Shooting komplett" wird nicht auf „nur Packshot" zurückgestuft.
+- Wirkung über die bestehenden Airtable-Formeln: „nur Packshot" zählt erst als fertig,
+  wenn „AI Foto" abgehakt ist → LOT bleibt 🟡 Teilweise statt ✅ Komplett.
+- Laufende Versand-Sessions ohne Zweck zeigen eine Nachwahl; Speichern ist bis dahin gesperrt.
+- Bewusst unverändert: Ein Komplett-Shooting zählt schon beim Rausschicken als fertig,
+  weil die Fotos meist lange vor der Ware zurückkommen.
+
 ## Nicht geändert
 
 Match-Kette EAN → `EAN_CLEAN` → SKU → `SKU stabil`, Unerwartet-Logik im Wareneingang,
